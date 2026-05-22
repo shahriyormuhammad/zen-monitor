@@ -1,0 +1,13 @@
+/var/log/enterprise-wb-analytics*.log {
+    su root syslog
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 root root
+    dateext
+    dateformat -%Y%m%d
+}

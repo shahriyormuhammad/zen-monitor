@@ -1,0 +1,2 @@
+ALTER TABLE "tenants" ADD COLUMN "telegram_signal_notification_prefs" jsonb DEFAULT '{"note":true,"assignment":true,"blocked":true}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "user_tenants" ADD COLUMN "in_app_signal_notification_prefs" jsonb DEFAULT '{"note":true,"assignment":true,"blocked":true}'::jsonb NOT NULL;

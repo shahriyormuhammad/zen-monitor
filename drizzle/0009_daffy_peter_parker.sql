@@ -1,0 +1,2 @@
+ALTER TABLE "signal_saved_views" ADD COLUMN "is_default" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE INDEX "signal_saved_views_user_default_idx" ON "signal_saved_views" USING btree ("tenant_id","user_id","is_default");

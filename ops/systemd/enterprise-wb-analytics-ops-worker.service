@@ -1,0 +1,28 @@
+[Unit]
+Description=Enterprise WB Analytics Ops Worker App
+After=network.target enterprise-wb-analytics.service
+Wants=enterprise-wb-analytics.service
+Requires=enterprise-wb-analytics.service
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/projects/enterprise-wb-analytics
+EnvironmentFile=/srv/projects/enterprise-wb-analytics/.env.runtime
+Environment=NODE_ENV=production
+Environment=PORT=3462
+Environment=HOSTNAME=127.0.0.1
+Environment=WORKER_ROLE=ops
+Environment=INNGEST_BASE_URL=http://127.0.0.1:8288
+ExecStart=/usr/bin/node /srv/projects/enterprise-wb-analytics/.next/standalone/server.js
+Restart=always
+RestartSec=5
+SuccessExitStatus=143
+TimeoutStopSec=45
+KillMode=mixed
+User=root
+Group=root
+StandardOutput=append:/var/log/enterprise-wb-analytics-ops-worker.log
+StandardError=append:/var/log/enterprise-wb-analytics-ops-worker.log
+
+[Install]
+WantedBy=multi-user.target

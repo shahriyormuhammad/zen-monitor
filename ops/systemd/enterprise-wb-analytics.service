@@ -1,0 +1,27 @@
+[Unit]
+Description=Enterprise WB Analytics Web App
+After=network.target postgresql.service enterprise-wb-analytics-supabase.service
+Wants=postgresql.service enterprise-wb-analytics-supabase.service
+Requires=enterprise-wb-analytics-supabase.service
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/projects/enterprise-wb-analytics
+Environment=NODE_ENV=production
+Environment=PORT=3457
+Environment=HOSTNAME=127.0.0.1
+EnvironmentFile=/srv/projects/enterprise-wb-analytics/.env.runtime
+ExecStartPre=/srv/projects/enterprise-wb-analytics/ops/prepare-next-standalone.sh /srv/projects/enterprise-wb-analytics
+ExecStart=/usr/bin/node /srv/projects/enterprise-wb-analytics/.next/standalone/server.js
+Restart=always
+RestartSec=5
+SuccessExitStatus=143
+TimeoutStopSec=45
+KillMode=mixed
+User=root
+Group=root
+StandardOutput=append:/var/log/enterprise-wb-analytics.log
+StandardError=append:/var/log/enterprise-wb-analytics.log
+
+[Install]
+WantedBy=multi-user.target

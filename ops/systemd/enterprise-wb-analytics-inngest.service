@@ -1,0 +1,25 @@
+[Unit]
+Description=Enterprise WB Analytics Inngest Runtime
+After=network.target enterprise-wb-analytics-sync-worker.service enterprise-wb-analytics-redistribution-worker.service enterprise-wb-analytics-advertising-worker.service enterprise-wb-analytics-reviews-worker.service enterprise-wb-analytics-ops-worker.service
+Wants=enterprise-wb-analytics-sync-worker.service enterprise-wb-analytics-redistribution-worker.service enterprise-wb-analytics-advertising-worker.service enterprise-wb-analytics-reviews-worker.service enterprise-wb-analytics-ops-worker.service
+Requires=enterprise-wb-analytics-sync-worker.service enterprise-wb-analytics-redistribution-worker.service enterprise-wb-analytics-advertising-worker.service enterprise-wb-analytics-reviews-worker.service enterprise-wb-analytics-ops-worker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/projects/enterprise-wb-analytics
+EnvironmentFile=/srv/projects/enterprise-wb-analytics/.env.runtime
+Environment=INNGEST_BASE_URL=http://127.0.0.1:8288
+ExecStartPre=/usr/bin/install -d -m 0700 -o root -g root /var/lib/enterprise-wb-analytics/inngest-main
+ExecStart=/usr/bin/npx --yes --ignore-scripts=false inngest-cli@1.18.0 start --host 127.0.0.1 --port 8288 --connect-gateway-port 8289 --sqlite-dir /var/lib/enterprise-wb-analytics/inngest-main --no-ui -u http://127.0.0.1:3458/api/inngest/sync -u http://127.0.0.1:3459/api/inngest/redistribution -u http://127.0.0.1:3460/api/inngest/advertising -u http://127.0.0.1:3461/api/inngest/reviews -u http://127.0.0.1:3462/api/inngest/ops
+Restart=always
+RestartSec=5
+SuccessExitStatus=143
+TimeoutStopSec=45
+KillMode=control-group
+User=root
+Group=root
+StandardOutput=append:/var/log/enterprise-wb-analytics-inngest.log
+StandardError=append:/var/log/enterprise-wb-analytics-inngest.log
+
+[Install]
+WantedBy=multi-user.target

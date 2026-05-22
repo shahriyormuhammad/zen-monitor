@@ -1,0 +1,13 @@
+[Unit]
+Description=Enterprise WB Analytics ops-watchdog tick
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/projects/enterprise-wb-analytics
+EnvironmentFile=/srv/projects/enterprise-wb-analytics/.env.runtime
+ExecStart=/usr/bin/node /srv/projects/enterprise-wb-analytics/scripts/ops-watchdog.mjs
+User=root
+Group=root
+StandardOutput=append:/var/log/enterprise-wb-analytics-watchdog.log
+StandardError=append:/var/log/enterprise-wb-analytics-watchdog.log

@@ -1,0 +1,14 @@
+[Unit]
+Description=Enterprise WB Analytics nightly DB backup
+After=network.target postgresql@17-main.service
+Requires=postgresql@17-main.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/projects/enterprise-wb-analytics
+EnvironmentFile=/srv/projects/enterprise-wb-analytics/.env.backup
+ExecStart=/usr/bin/node /srv/projects/enterprise-wb-analytics/scripts/nightly-db-backup.mjs
+User=postgres
+Group=postgres
+StandardOutput=append:/var/log/enterprise-wb-analytics-backup.log
+StandardError=append:/var/log/enterprise-wb-analytics-backup.log

@@ -1,0 +1,13 @@
+[Unit]
+Description=Enterprise WB Analytics network hardening firewall rules
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/enterprise-wb-network-hardening.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

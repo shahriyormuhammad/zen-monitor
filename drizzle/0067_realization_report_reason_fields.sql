@@ -1,0 +1,5 @@
+ALTER TABLE raw_api_realization_reports
+  ADD COLUMN IF NOT EXISTS doc_type_name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS supplier_oper_name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS bonus_type_name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS rebill_logistic_org TEXT NOT NULL DEFAULT '';

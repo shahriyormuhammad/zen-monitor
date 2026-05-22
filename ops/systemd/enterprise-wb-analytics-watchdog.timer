@@ -1,0 +1,10 @@
+[Unit]
+Description=ops-watchdog every 5 minutes
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=5min
+Unit=enterprise-wb-analytics-watchdog.service
+
+[Install]
+WantedBy=timers.target

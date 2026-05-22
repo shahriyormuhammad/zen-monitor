@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly DB backup for enterprise-wb-analytics
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=600
+Persistent=true
+Unit=enterprise-wb-analytics-backup.service
+
+[Install]
+WantedBy=timers.target

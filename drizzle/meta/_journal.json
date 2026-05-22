@@ -1,0 +1,720 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1775053926017,
+      "tag": "0000_hard_snowbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1775165763438,
+      "tag": "0001_swift_the_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775199649826,
+      "tag": "0002_simple_lightspeed",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1775221269629,
+      "tag": "0003_condemned_vermin",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775254486201,
+      "tag": "0004_overjoyed_lionheart",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775285649731,
+      "tag": "0005_volatile_vin_gonzales",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1775292913495,
+      "tag": "0006_fearless_gambit",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1775294213323,
+      "tag": "0007_thin_shape",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1775297169855,
+      "tag": "0008_mysterious_marrow",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1775298738460,
+      "tag": "0009_daffy_peter_parker",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1775302049892,
+      "tag": "0010_silly_vance_astro",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1775307202048,
+      "tag": "0011_hesitant_rictor",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1775325943111,
+      "tag": "0012_public_brood",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1775330923368,
+      "tag": "0013_fixed_nebula",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1775451015461,
+      "tag": "0014_careless_kat_farrell",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1775549538079,
+      "tag": "0015_lying_major_mapleleaf",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1775753945750,
+      "tag": "0016_pretty_monster_badoon",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1775801519735,
+      "tag": "0017_dapper_mikhail_rasputin",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1775890200000,
+      "tag": "0018_solid_gorgon",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1775901600000,
+      "tag": "0019_wakeful_shinobi_shaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1775955600000,
+      "tag": "0020_nifty_route_scan",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1776066803110,
+      "tag": "0021_even_lionheart",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1776106421392,
+      "tag": "0022_advertising_cluster_actions",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1776108439403,
+      "tag": "0023_advertising_workspace",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1776116570965,
+      "tag": "0024_oval_sabretooth",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1776149965503,
+      "tag": "0025_majestic_fantastic_four",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1776162000000,
+      "tag": "0026_tense_manual_inputs",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1776198607609,
+      "tag": "0027_ad_costs_order_sum",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1776240915312,
+      "tag": "0028_fresh_polaris",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1776243982973,
+      "tag": "0029_left_maria_hill",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1776330000000,
+      "tag": "0030_realization_report_v5_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1776330100000,
+      "tag": "0031_idempotency_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1776330200000,
+      "tag": "0032_stock_planning_production_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1776330300000,
+      "tag": "0033_region_sales",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1776330400000,
+      "tag": "0034_wb_tariff_commission_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1776350000000,
+      "tag": "0035_production_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1776421641881,
+      "tag": "0036_wb_lk_storage_state_encryption",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1776421700000,
+      "tag": "0037_advertising_balance",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1776421800000,
+      "tag": "0038_advertising_guardrails",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1776421900000,
+      "tag": "0039_advertising_dayparting_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1776422000000,
+      "tag": "0040_rls_enable",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1776422100000,
+      "tag": "0041_telegram_processed_updates",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1776422200000,
+      "tag": "0042_invitations_invited_by_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1776422300000,
+      "tag": "0043_advertising_bid_changes_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1776422400000,
+      "tag": "0044_advertising_audit_log_nm_id_bigint",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1776422500000,
+      "tag": "0045_dashboard_hot_path_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1776422600000,
+      "tag": "0046_daily_pnl_materialized_view",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1776422700000,
+      "tag": "0047_rls_strict",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1776940800000,
+      "tag": "0048_advertising_strategy_modes",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1777046400000,
+      "tag": "0049_daily_pnl_tax_base",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1777132800000,
+      "tag": "0050_ausn_monthly_inputs",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1777219200000,
+      "tag": "0051_ausn_document_rows",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1777305600000,
+      "tag": "0052_realization_sale_dt_tax_base",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1777392000000,
+      "tag": "0053_daily_pnl_seller_discount_tax_base",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1777478400000,
+      "tag": "0054_daily_pnl_profit_seller_price_tax_buyer_price",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1777564800000,
+      "tag": "0055_daily_pnl_restore_wb_payout_profit",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1777990271000,
+      "tag": "0056_price_spp_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1777991300000,
+      "tag": "0057_price_snapshot_public_price",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1778065200000,
+      "tag": "0058_funnel_localization_percent",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1778071200000,
+      "tag": "0059_products_wb_warehouse_volume",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1778074800000,
+      "tag": "0060_daily_pnl_fallback_seller_price",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1778078400000,
+      "tag": "0061_production_orders_multi_sku",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1778078500000,
+      "tag": "0062_own_stock_batches",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1778090000000,
+      "tag": "0063_drop_stock_planning_inputs",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1778144637000,
+      "tag": "0064_procifry_agent_rbac",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1778151800000,
+      "tag": "0065_wb_lk_token_v3",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1778179965985,
+      "tag": "0066_procifry_external_read_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1778215200000,
+      "tag": "0067_realization_report_reason_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1778220000000,
+      "tag": "0068_realization_srid_order_logistics",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1778448285808,
+      "tag": "0069_platform_admin_billing",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1778495217431,
+      "tag": "0070_finance_management",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1778498096444,
+      "tag": "0071_finance_russian_labels",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1778501496179,
+      "tag": "0072_sales_plan",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1778506500000,
+      "tag": "0073_ausn_bank_and_manual_operations",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1778565600000,
+      "tag": "0074_dynamics_group_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1778608800000,
+      "tag": "0075_credit_principal_exclude_from_pnl",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1778611427032,
+      "tag": "0076_risk_signal_stable_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1778615000000,
+      "tag": "0077_advertising_autopilot_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1778617750000,
+      "tag": "0078_advertising_hourly_stats",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1778622721000,
+      "tag": "0079_advertising_hourly_campaign_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1778660400000,
+      "tag": "0080_team_feature_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1778683235803,
+      "tag": "0081_tenant_vat_marketplace_tax",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1778750000000,
+      "tag": "0082_platform_impersonation_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1778755743272,
+      "tag": "0083_wb_promotion_deduction_exclude_from_pnl",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1778787400000,
+      "tag": "0084_platform_leads",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1778832000000,
+      "tag": "0085_order_warehouse_logistics",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1778846400000,
+      "tag": "0086_wb_feedback_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1778920800000,
+      "tag": "0087_ad_costs_views_clicks",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1778997330175,
+      "tag": "0088_own_stock_locations",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1779088347000,
+      "tag": "0089_raw_unique_nulls_not_distinct",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1779104036840,
+      "tag": "0090_wb_supply_writeoffs",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1779107000000,
+      "tag": "0091_procifry_draft_skus",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1779181200000,
+      "tag": "0097_telegram_chat_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1779181800000,
+      "tag": "0098_telegram_link_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1779217200000,
+      "tag": "0099_telegram_processed_updates_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1779220800000,
+      "tag": "0100_wb_buyout_accrual_pnl",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1779304200000,
+      "tag": "0101_tenant_scoped_raw_wb_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1779307800000,
+      "tag": "0102_wb_returns_negative_in_pnl",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1779350400000,
+      "tag": "0103_realization_logistics_fixation",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1779354000000,
+      "tag": "0104_sales_funnel_views_daily",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1779379904547,
+      "tag": "0105_sales_funnel_nm_daily",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1779437611807,
+      "tag": "0107_freight_reimbursement_not_income",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+version: 2
+
+updates:
+  # npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Moscow"
+    open-pull-requests-limit: 5
+    groups:
+      next-ecosystem:
+        patterns:
+          - "next"
+          - "react"
+          - "react-dom"
+          - "@types/react*"
+      tanstack:
+        patterns:
+          - "@tanstack/*"
+      supabase:
+        patterns:
+          - "@supabase/*"
+      drizzle:
+        patterns:
+          - "drizzle-orm"
+          - "drizzle-kit"
+      inngest:
+        patterns:
+          - "inngest"
+      dev-tooling:
+        patterns:
+          - "eslint*"
+          - "@typescript-eslint/*"
+          - "typescript"
+          - "vitest"
+          - "@vitejs/*"
+    ignore:
+      # Major version bumps require manual review
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Moscow"
+    open-pull-requests-limit: 3
