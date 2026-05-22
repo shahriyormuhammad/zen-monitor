@@ -34,6 +34,7 @@ import {
 
 import { PricingPlans } from '@/components/PricingPlans';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { ZenMonitorLogo } from '@/components/brand/ZenMonitorLogo';
 
 export const metadata: Metadata = {
   title: 'Zen Monitor — операционная аналитика для продавцов Wildberries',
@@ -460,8 +461,8 @@ function SiteHeader() {
 
 function BrandMark() {
   return (
-    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-cyan-400 text-sm font-black text-white shadow-[0_10px_28px_-10px_rgba(99,102,241,0.7)]">
-      ПЦ
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl">
+      <ZenMonitorLogo size={40} />
     </span>
   );
 }
