@@ -424,7 +424,7 @@ function SiteHeader() {
           <BrandMark />
           <div className="min-w-0">
             <p className="whitespace-nowrap text-sm font-bold tracking-tight text-slate-950 dark:text-white">
-              Про&nbsp;Цифры
+              Zen&nbsp;Monitor
             </p>
             <p className="hidden text-[11px] tracking-[0.16em] text-slate-500 dark:text-slate-400 sm:block">
               КОНТРОЛЬ ПРИБЫЛИ WB
@@ -461,8 +461,8 @@ function SiteHeader() {
 
 function BrandMark() {
   return (
-    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl">
-      <ZenMonitorLogo size={40} />
+    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl">
+      <ZenMonitorLogo size={48} />
     </span>
   );
 }
