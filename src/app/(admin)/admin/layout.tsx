@@ -21,7 +21,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         <div className="mx-auto flex max-w-[1780px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <Link href="/admin" className="min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-[0.32em] text-muted-foreground">Внутренняя панель</p>
-            <p className="mt-1 text-lg font-black tracking-tight text-foreground">Про Цифры: админка</p>
+            <p className="mt-1 text-lg font-black tracking-tight text-foreground">Zen Monitor: админка</p>
           </Link>
 
           <nav className="flex flex-wrap gap-2">

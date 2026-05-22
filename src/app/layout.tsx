@@ -3,8 +3,8 @@ import './globals.css';
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
-  title: 'Про Цифры',
-  description: 'Контроль прибыли, рекламы, остатков и рабочих сигналов для продавцов Wildberries',
+  title: 'Zen Monitor · аналитика селлера Wildberries',
+  description: 'Zen Monitor — спокойный контроль прибыли, рекламы, остатков и рабочих сигналов для продавцов Wildberries.',
 };
 
 export default function RootLayout({

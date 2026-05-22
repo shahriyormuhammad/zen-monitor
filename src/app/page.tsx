@@ -36,7 +36,7 @@ import { PricingPlans } from '@/components/PricingPlans';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 export const metadata: Metadata = {
-  title: 'Про Цифры — операционная аналитика для продавцов Wildberries',
+  title: 'Zen Monitor — операционная аналитика для продавцов Wildberries',
   description:
     'Прибыль, реклама с автопилотом, сигналы риска, отзывы, остатки и работа команды для селлеров Wildberries — в одном рабочем контуре. Не отчёты, а очередь решений.',
 };
@@ -278,7 +278,7 @@ const testimonials = [
     name: 'Анна Кравцова',
     role: 'Селлер, одежда · 1 кабинет',
     quote:
-      'На первой неделе «Про Цифры» показал две кампании, которые жгли бюджет в минус. Отключила — маржа выросла на 12%.',
+      'На первой неделе «Zen Monitor» показал две кампании, которые жгли бюджет в минус. Отключила — маржа выросла на 12%.',
   },
   {
     name: 'Дмитрий Соловьёв',
@@ -321,7 +321,7 @@ const faqItems = [
   {
     question: 'Нужно ли что-то устанавливать?',
     answer:
-      '«Про Цифры» работает в браузере — устанавливать ничего не нужно. Уведомления о рабочих событиях дополнительно приходят в Telegram.',
+      '«Zen Monitor» работает в браузере — устанавливать ничего не нужно. Уведомления о рабочих событиях дополнительно приходят в Telegram.',
   },
   {
     question: 'Подойдёт ли продукт для одного кабинета?',
@@ -487,7 +487,7 @@ function Hero() {
           </h1>
 
           <p className="mt-6 max-w-xl text-base leading-7 text-slate-600 dark:text-slate-300 sm:text-lg sm:leading-8">
-            «Про Цифры» сводит продажи, рекламу, юнит-экономику, остатки и отзывы в один рабочий контур. Не очередная
+            «Zen Monitor» сводит продажи, рекламу, юнит-экономику, остатки и отзывы в один рабочий контур. Не очередная
             панель с графиками — а очередь решений: что съедает маржу сегодня, кто за это отвечает и что уже сделано.
           </p>
 
@@ -534,7 +534,7 @@ function HeroConsole() {
               <span className="h-2.5 w-2.5 rounded-full bg-rose-400/80" />
               <span className="h-2.5 w-2.5 rounded-full bg-amber-400/80" />
               <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/80" />
-              <span className="ml-2.5 text-xs font-medium text-white/65">Про Цифры — Обзор кабинета</span>
+              <span className="ml-2.5 text-xs font-medium text-white/65">Zen Monitor — Обзор кабинета</span>
             </div>
             <span className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-200">
               <span className="relative flex h-1.5 w-1.5">
@@ -695,7 +695,7 @@ function ProblemSection() {
           <ArrowRight className="h-5 w-5" />
         </span>
         <p className="text-sm leading-6 text-slate-700 dark:text-slate-200 sm:text-base">
-          «Про Цифры» убирает ручную склейку выгрузок и превращает разрозненные данные в{' '}
+          «Zen Monitor» убирает ручную склейку выгрузок и превращает разрозненные данные в{' '}
           <span className="font-semibold text-slate-950 dark:text-white">приоритеты и конкретные действия</span>.
         </p>
       </div>
@@ -1082,7 +1082,7 @@ function VideoSection() {
         center
         eyebrow="Видеообзор"
         eyebrowIcon={Play}
-        title="«Про Цифры» в работе — за пять минут"
+        title="«Zen Monitor» в работе — за пять минут"
         description="Короткий обзор: как устроен контур, где сигналы, реклама и юнит-экономика и как платформа помогает принимать решения каждый день."
       />
       {/* TODO: заменить плейсхолдер на встроенное видео (iframe RuTube / YouTube) */}
@@ -1187,7 +1187,7 @@ function TestimonialsSection() {
         eyebrow="Отзывы"
         eyebrowIcon={Star}
         title="Что говорят продавцы"
-        description="Живые впечатления селлеров и команд, которые уже перевели работу с кабинетом Wildberries в «Про Цифры»."
+        description="Живые впечатления селлеров и команд, которые уже перевели работу с кабинетом Wildberries в «Zen Monitor»."
       />
       <div className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {testimonials.map((item) => (
@@ -1289,7 +1289,7 @@ function FinalCta() {
               3 дня бесплатно
             </span>
             <h2 className="mt-5 text-3xl font-black tracking-[-0.03em] sm:text-[2.6rem] sm:leading-[1.1]">
-              Попробуйте «Про Цифры» 3 дня бесплатно.
+              Попробуйте «Zen Monitor» 3 дня бесплатно.
             </h2>
             <p className="mt-4 max-w-xl text-sm leading-7 text-white/70 sm:text-base">
               Зарегистрируйтесь, подключите кабинет Wildberries по API-токену и три дня пользуйтесь полным контуром
@@ -1337,7 +1337,7 @@ function SiteFooter() {
           <div className="max-w-sm">
             <div className="flex items-center gap-2.5">
               <BrandMark />
-              <span className="text-sm font-bold tracking-tight text-slate-950 dark:text-white">Про Цифры</span>
+              <span className="text-sm font-bold tracking-tight text-slate-950 dark:text-white">Zen Monitor</span>
             </div>
             <p className="mt-4 text-sm leading-6 text-slate-600 dark:text-slate-400">
               Операционная аналитика для продавцов Wildberries: прибыль, реклама, сигналы риска, отзывы, остатки и
@@ -1385,7 +1385,7 @@ function SiteFooter() {
         </div>
 
         <div className="mt-10 flex flex-col gap-3 border-t border-border/60 pt-6 text-xs text-slate-500 dark:text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} Про Цифры. Контроль прибыли Wildberries.</p>
+          <p>© {new Date().getFullYear()} Zen Monitor. Контроль прибыли Wildberries.</p>
           <p>Wildberries — товарный знак правообладателя. Продукт не аффилирован с маркетплейсом.</p>
         </div>
       </div>

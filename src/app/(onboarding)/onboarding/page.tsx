@@ -12,7 +12,7 @@ import { plans, subscriptions, syncRuns, tenants } from '@/lib/db/schema';
 import { OnboardingSetup, type OnboardingPlanOption } from './OnboardingSetup';
 
 export const metadata: Metadata = {
-  title: 'Первый запуск — Про Цифры',
+  title: 'Первый запуск — Zen Monitor',
   description: 'Выбор пакета, подключение Wildberries и запуск первой синхронизации.',
 };
 

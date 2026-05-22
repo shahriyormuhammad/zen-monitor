@@ -67,5 +67,5 @@ export function isActiveDashboardPath(pathname: string, href: string) {
 
 export function getDashboardPageTitle(pathname: string | null) {
   const currentPath = pathname ?? '/overview';
-  return routeTitles.find((item) => isActiveDashboardPath(currentPath, item.href))?.title ?? 'Про цифры';
+  return routeTitles.find((item) => isActiveDashboardPath(currentPath, item.href))?.title ?? 'Zen Monitor';
 }

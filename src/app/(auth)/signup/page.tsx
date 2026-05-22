@@ -5,7 +5,7 @@ import { PasswordField } from '../_components/PasswordField';
 import { signup } from '../login/actions';
 
 export const metadata: Metadata = {
-  title: 'Регистрация — Про Цифры',
+  title: 'Регистрация — Zen Monitor',
   description: 'Создание аккаунта в сервисе контроля прибыли Вайлдберриз.',
 };
 
@@ -55,7 +55,7 @@ export default async function SignupPage(props: { searchParams: Promise<SignupSe
               <Receipt className="h-6 w-6" />
             </span>
             <span>
-              <span className="block text-lg font-black">Про Цифры</span>
+              <span className="block text-lg font-black">Zen Monitor</span>
               <span className="block text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
                 Контроль прибыли ВБ
               </span>
