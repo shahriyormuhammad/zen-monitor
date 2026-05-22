@@ -5,6 +5,12 @@ import { Providers } from './providers';
 export const metadata: Metadata = {
   title: 'Zen Monitor · аналитика селлера Wildberries',
   description: 'Zen Monitor — спокойный контроль прибыли, рекламы, остатков и рабочих сигналов для продавцов Wildberries.',
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+    ],
+    apple: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({

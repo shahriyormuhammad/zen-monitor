@@ -5,6 +5,7 @@ import { HelpCircle, Sparkles, UserCircle2 } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { ZenMonitorLogo } from '@/components/brand/ZenMonitorLogo';
 
 import { DashboardScaleControl } from './DashboardScaleControl';
 import { getDashboardPageTitle } from './dashboard-navigation';
@@ -19,11 +20,14 @@ export function Header() {
   return (
     <header className="sticky top-0 z-20 border-b border-border bg-card/88 px-3 py-1.5 shadow-[var(--shadow-xs)] backdrop-blur-xl dark:bg-[#08090d]/88 lg:px-5">
       <div className="flex min-h-11 items-center gap-3">
-        <div className="min-w-[190px] shrink-0 lg:min-w-[250px]">
-          <p className="text-[10px] font-bold uppercase tracking-[0.34em] text-muted-foreground">Zen Monitor</p>
-          <h1 className="mt-0.5 truncate text-lg font-extrabold tracking-tight text-foreground xl:text-xl">
-            {pageTitle}
-          </h1>
+        <div className="flex min-w-[190px] shrink-0 items-center gap-2 lg:min-w-[250px]">
+          <ZenMonitorLogo size={28} />
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-[0.34em] text-muted-foreground">Zen Monitor</p>
+            <h1 className="mt-0.5 truncate text-lg font-extrabold tracking-tight text-foreground xl:text-xl">
+              {pageTitle}
+            </h1>
+          </div>
         </div>
 
         <DashboardScaleControl />

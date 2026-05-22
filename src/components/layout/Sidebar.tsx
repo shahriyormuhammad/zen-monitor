@@ -7,6 +7,7 @@ import { GripVertical } from 'lucide-react';
 import { userCanAccessFeature } from '@/lib/auth/feature-access';
 import { useStore } from '@/store/useStore';
 import { dashboardNavItems, isActiveDashboardPath, type DashboardNavItem } from './dashboard-navigation';
+import { ZenMonitorLogo } from '@/components/brand/ZenMonitorLogo';
 
 const DEFAULT_NAV_ORDER = dashboardNavItems.map((item) => item.href);
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = 'dashboard-sidebar-nav-order:v1';
@@ -127,10 +128,11 @@ export function Sidebar() {
           <Link
             href="/overview"
             prefetch={false}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-slate-950/10 bg-[#070a12] text-sm font-black tracking-tight text-white shadow-[0_16px_34px_-18px_rgba(14,165,233,0.7)] transition-transform hover:-translate-y-0.5 dark:border-white/10 dark:bg-white dark:text-[#070a12]"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition-transform hover:-translate-y-0.5"
             title="Zen Monitor"
+            aria-label="Zen Monitor"
           >
-            ПЦ
+            <ZenMonitorLogo size={48} />
           </Link>
           <div className="min-w-0 opacity-0 transition-opacity delay-0 duration-200 group-hover:opacity-100 group-hover:delay-150">
             <p className="truncate text-xl font-black tracking-tight text-foreground">Zen Monitor</p>
