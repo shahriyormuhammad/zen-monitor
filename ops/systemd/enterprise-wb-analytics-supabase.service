@@ -1,0 +1,24 @@
+[Unit]
+Description=Enterprise WB Analytics Supabase Local Stack
+After=network.target docker.service
+Requires=docker.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/srv/projects/enterprise-wb-analytics
+EnvironmentFile=/srv/projects/enterprise-wb-analytics/.env.runtime
+ExecStart=/usr/bin/npx --yes supabase@latest start --exclude studio,logflare,vector,realtime,storage-api,imgproxy,postgrest,postgres-meta,edge-runtime,supavisor --ignore-health-check
+ExecStop=/bin/true
+Restart=on-failure
+RestartSec=15s
+TimeoutStartSec=900
+TimeoutStopSec=30
+User=root
+Group=root
+StandardOutput=append:/var/log/enterprise-wb-analytics-supabase.log
+StandardError=append:/var/log/enterprise-wb-analytics-supabase.log
+
+[Install]
+WantedBy=multi-user.target

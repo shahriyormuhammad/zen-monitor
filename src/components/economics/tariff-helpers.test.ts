@@ -165,18 +165,18 @@ describe('auto buyout eligibility', () => {
     const diagnostics = getRowBuyoutAutoDiagnostics({
       buyoutPercentFact: 80,
       buyoutHistoryDaysFact: 35,
-      buyoutOrderCountFact: 30,
-      buyoutCountFact: 20,
-      buyoutCancelCountFact: 10,
+      buyoutOrderCountFact: 130,
+      buyoutCountFact: 80,
+      buyoutCancelCountFact: 30,
     });
     expect(diagnostics.canUseAuto).toBe(true);
     expect(diagnostics.reason).toBe('ok');
     expect(canUseRowAutoBuyout({
       buyoutPercentFact: 80,
       buyoutHistoryDaysFact: 35,
-      buyoutOrderCountFact: 30,
-      buyoutCountFact: 20,
-      buyoutCancelCountFact: 10,
+      buyoutOrderCountFact: 130,
+      buyoutCountFact: 80,
+      buyoutCancelCountFact: 30,
     })).toBe(true);
   });
 
@@ -196,9 +196,9 @@ describe('auto buyout eligibility', () => {
     const diagnostics = getRowBuyoutAutoDiagnostics({
       buyoutPercentFact: 90,
       buyoutHistoryDaysFact: 35,
-      buyoutOrderCountFact: 30,
-      buyoutCountFact: 8,
-      buyoutCancelCountFact: 4,
+      buyoutOrderCountFact: 200,
+      buyoutCountFact: 60,
+      buyoutCancelCountFact: 50,
     });
     expect(diagnostics.canUseAuto).toBe(false);
     expect(diagnostics.reason).toBe('high_open_share');

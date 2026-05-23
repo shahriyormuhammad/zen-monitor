@@ -2,7 +2,6 @@
 Description=Enterprise WB Analytics Web App
 After=network.target postgresql.service enterprise-wb-analytics-supabase.service
 Wants=postgresql.service enterprise-wb-analytics-supabase.service
-Requires=enterprise-wb-analytics-supabase.service
 
 [Service]
 Type=simple

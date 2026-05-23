@@ -111,13 +111,15 @@ export type UnitTemplateRow = {
     quantity: number;
     source?: 'stocks' | 'stock_sizes';
   }>;
-  /**
-   * Доля локальных заказов от WB API (statistic.selected.localizationPercent
-   * из /api/analytics/v3/sales-funnel/products), 0..100 или null если SKU
-   * ещё не попал в funnel-синхронизацию. Используется row-summary для
-   * авто-расчёта ИЛ и ИРП по официальным сеткам.
-   */
+  /** Доля локальных заказов SKU от WB API. Храним для диагностики, не как активный кабинетный ИЛ/ИРП. */
   localizationPercent?: number | null;
+  /** Единый кабинетный ИЛ из WB «Поставки → Тарифы» или 13-недельного fallback. */
+  cabinetLocalityIndex?: number | string | null;
+  /** Единый кабинетный ИРП (%) из WB «Поставки → Тарифы» или 13-недельного fallback. */
+  cabinetIrpPercent?: number | string | null;
+  cabinetIndicesSource?: 'wb_tariffs' | 'manual' | 'calculated_fallback' | 'none' | string | null;
+  cabinetIndicesEffectiveWeek?: string | null;
+  cabinetIndicesFetchedAt?: string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [extra: string]: any;
 };
@@ -215,19 +217,22 @@ export type RowSummary = {
   buyoutAutoWarning: string | null;
   /** ИРП (Индекс Распределения Продаж) — % надбавка от цены до скидки WB. */
   irpPercent: number;
-  /** Источник ИРП: ручной override или авторасчёт по WB localizationPercent. */
-  irpSource: 'manual' | 'auto' | 'none';
+  /** Фактический ИРП для отображения в UI; может быть >0 даже когда в формуле не применяется. */
+  irpDisplayPercent: number;
+  /** Источник ИРП: кабинетное значение, ручной override, fallback-расчёт или нет данных. */
+  irpSource: 'cabinet' | 'manual' | 'auto' | 'none';
   /** Надбавка ИРП в ₽: priceBeforeWbDiscount × irpPercent / 100. */
   irpSurcharge: number;
   /** Индекс локализации ИЛ — коэффициент к forward (legacy field name). */
   localityIndexPercent: number;
   /**
    * Источник ИЛ (множитель к forward):
+   *  - 'cabinet'  — единый кабинетный ИЛ из WB «Поставки → Тарифы» / fallback;
    *  - 'manual'   — пользователь ввёл `manualFields.localityIndexPercent` руками;
-   *  - 'auto'     — авторасчёт по `row.localizationPercent` через WB-сетку;
+   *  - 'auto'     — legacy fallback по `row.localizationPercent` через WB-сетку;
    *  - 'none'     — нет ни ручного, ни авто (FBS, или нет данных от WB).
    */
-  localityIndexSource: 'manual' | 'auto' | 'none';
+  localityIndexSource: 'cabinet' | 'manual' | 'auto' | 'none';
   /**
    * Доля локальных заказов от WB API (или null если SKU ещё не попал в funnel
    * sync). Сохраняется отдельно от `irpPercent` чтобы UI мог показать
@@ -240,6 +245,8 @@ export type RowSummary = {
   logisticsPerUnit: number;
   reverseLogisticsPerUnit: number;
   returnToSellerPerUnit: number;
+  /** Forward logistics shown to user: direct logistics with ИЛ plus ИРП surcharge. */
+  logisticsToClientWithIrp: number;
   logisticsTotalComputed: number;
   storagePerUnit: number;
   storageTotalComputed: number;

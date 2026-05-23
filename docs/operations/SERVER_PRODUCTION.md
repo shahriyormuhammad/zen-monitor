@@ -26,18 +26,19 @@ Production lives on a single bare-metal server, not Render. `render.yaml` and `D
 - Playwright RPA: runs via `enterprise-wb-xvfb` + `enterprise-wb-x11vnc` + `enterprise-wb-novnc` services on a virtual display
 
 ## Systemd units
-- `enterprise-wb-analytics.service` — Next.js web, ExecStart = `node .next/standalone/server.js`, env `PORT=3457`, `HOSTNAME=127.0.0.1`, prestart = `ops/prepare-next-standalone.sh`, log at `/var/log/enterprise-wb-analytics.log`
+- `enterprise-wb-analytics.service` — Next.js web, ExecStart = `node .next/standalone/server.js`, env `PORT=3457`, `HOSTNAME=127.0.0.1`, prestart = `ops/prepare-next-standalone.sh`, log at `/var/log/enterprise-wb-analytics.log`; boot uses `Wants`/`After` for Supabase instead of `Requires` so one early Supabase failure cannot permanently block web startup
 - `enterprise-wb-analytics-sync-worker.service` — Next.js worker process for WB sync/core jobs on `127.0.0.1:3458`
 - `enterprise-wb-analytics-redistribution-worker.service` — redistribution worker on `127.0.0.1:3459`
 - `enterprise-wb-analytics-advertising-worker.service` — advertising/bidder worker on `127.0.0.1:3460`
 - `enterprise-wb-analytics-reviews-worker.service` — reviews/questions worker on `127.0.0.1:3461`
 - `enterprise-wb-analytics-ops-worker.service` — ops worker for SLA/stock alert jobs on `127.0.0.1:3462`
 - `enterprise-wb-analytics-inngest.service` — single signed self-hosted Inngest runtime on `127.0.0.1:8288`; registers all worker endpoints (`/sync`, `/redistribution`, `/advertising`, `/reviews`, `/ops`)
-- `enterprise-wb-analytics-supabase.service` — local Supabase Docker stack
+- `enterprise-wb-analytics-supabase.service` — local Supabase Docker stack; retries on boot because Supabase CLI can exit before `supabase_db_*` becomes healthy
 - `enterprise-wb-network-hardening.service` — persistent firewall hardening for internal app, Supabase, Inngest, noVNC and VNC ports
 - `nginx.service` — public HTTP/HTTPS reverse proxy to `127.0.0.1:3457`
 - `postgresql@17-main.service` — product DB
 - `enterprise-wb-analytics-backup.timer` — nightly DB backup with restore-test via local postgres peer auth and `.env.backup`
+- `enterprise-wb-analytics-watchdog.timer` — boot and periodic health/systemd guard; runs after boot and every 5 minutes, logs or sends Telegram alerts, and auto-starts monitored inactive/failed units
 
 ## Network topology (production traffic path)
 

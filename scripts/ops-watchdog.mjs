@@ -9,6 +9,9 @@ import postgres from "postgres";
 const telegramToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
 const telegramChatId = process.env.TELEGRAM_OPS_CHAT_ID?.trim();
 const healthUrl = process.env.OPS_WATCHDOG_HEALTH_URL?.trim() || "http://127.0.0.1:3457/api/health";
+const autoRecoverSystemd = !["0", "false", "no", "off"].includes(
+  process.env.OPS_WATCHDOG_AUTO_RECOVER_SYSTEMD?.trim().toLowerCase() || "true",
+);
 const systemdUnits = (process.env.OPS_WATCHDOG_SYSTEMD_UNITS?.trim()
   || [
     "enterprise-wb-analytics.service",
@@ -22,6 +25,24 @@ const systemdUnits = (process.env.OPS_WATCHDOG_SYSTEMD_UNITS?.trim()
     "enterprise-wb-network-hardening.service",
     "nginx.service",
     "postgresql@17-main.service",
+  ].join(","))
+  .split(",")
+  .map((unit) => unit.trim())
+  .filter(Boolean);
+const systemdRecoveryUnits = (process.env.OPS_WATCHDOG_SYSTEMD_RECOVERY_UNITS?.trim()
+  || [
+    "postgresql@17-main.service",
+    "docker.service",
+    "enterprise-wb-analytics-supabase.service",
+    "enterprise-wb-network-hardening.service",
+    "enterprise-wb-analytics.service",
+    "enterprise-wb-analytics-sync-worker.service",
+    "enterprise-wb-analytics-redistribution-worker.service",
+    "enterprise-wb-analytics-advertising-worker.service",
+    "enterprise-wb-analytics-reviews-worker.service",
+    "enterprise-wb-analytics-ops-worker.service",
+    "enterprise-wb-analytics-inngest.service",
+    "nginx.service",
   ].join(","))
   .split(",")
   .map((unit) => unit.trim())
@@ -256,6 +277,40 @@ function checkSystemdUnits() {
   };
 }
 
+function recoverSystemdUnits(statuses) {
+  if (!autoRecoverSystemd) {
+    return [];
+  }
+
+  const downUnitNames = new Set(
+    Object.entries(statuses)
+      .filter(([, status]) => status !== "active" && status !== "activating")
+      .map(([unit]) => unit),
+  );
+  const targetUnits = systemdRecoveryUnits.filter((unit) => downUnitNames.has(unit));
+  const results = [];
+
+  for (const unit of targetUnits) {
+    spawnSync("systemctl", ["reset-failed", unit], {
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+
+    const result = spawnSync("systemctl", ["start", unit], {
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+
+    results.push({
+      unit,
+      ok: result.status === 0,
+      message: (result.stderr || result.stdout || "").trim(),
+    });
+  }
+
+  return results;
+}
+
 async function collectSyncErrorEvents(previousKeys) {
   if (!databaseUrl) {
     return {
@@ -390,7 +445,17 @@ async function main() {
     lastError: health.ok ? null : (health.error ?? "unknown"),
   };
 
-  const systemd = checkSystemdUnits();
+  let systemd = checkSystemdUnits();
+  const recoveryResults = recoverSystemdUnits(systemd.statuses);
+  if (recoveryResults.length > 0) {
+    for (const result of recoveryResults) {
+      const status = result.ok ? "started" : "failed";
+      const details = result.message ? `: ${result.message}` : "";
+      console.warn(`[ops-watchdog] systemd auto-recovery ${status}: ${result.unit}${details}`);
+    }
+    systemd = checkSystemdUnits();
+  }
+
   const previousDownUnits = [...state.systemd.downUnits].sort();
   const currentDownUnits = [...systemd.downUnits].sort();
 

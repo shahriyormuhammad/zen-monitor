@@ -221,10 +221,10 @@ const RU_FORMULA_HINTS: Record<string, string> = {
   wb_price_before_discount: 'Цена продавца до скидки × (1 − Скидка продавца / 100)',
   price_after_wb: 'Цена до скидок WB × (1 − Скидка WB / 100)',
   marketplace_fee_rub: 'Цена до скидок WB × Комиссия МП % / 100',
-  marketplace_logistics_total: 'Логистика до клиента с ИЛ + Обратная логистика × (1 − Выкуп/100) + Цена до WB × ИРП% (только FBW)',
+  marketplace_logistics_total: '(Логистика до клиента с ИЛ и ИРП + Обратная логистика × (1 − Выкуп/100)) / (Выкуп/100)',
   marketplace_storage_total_1: 'Хранение за ед среднее / день × Оборачиваемость в днях',
   acquiring_3: 'Цена продавца до скидки × 3%',
-  marketplace_plus_storage_total: 'Комиссия МП + Итог логистики с % выкупа и ИРП + Хранение МП + Эквайринг',
+  marketplace_plus_storage_total: 'Комиссия МП + Итоговая логистика с % выкупа + Хранение МП + Эквайринг',
   to_settlement_account_1: 'Цена до скидок WB − (Комиссия + Логистика + Хранение + Эквайринг)',
   tax_rub_1: 'Цена WB (после скидки WB) × Налог %',
   revenue_after_tax_1: 'К оплате на р/с − Налог в рублях',
@@ -258,7 +258,7 @@ const RU_FORMULA_HINTS: Record<string, string> = {
   drr_percent_buyouts: 'Маркетинг внутр. / Выручка партии (от факт. выкупа) × 100%',
   cpo_plan: 'Маркетинг внутр. / Плановые заказы',
   cps_plan: 'Маркетинг внутр. / Кол-во к закупу',
-  marketplace_logistics_avg: 'Логистика до клиента с ИЛ: forward по выбранным складам с коэф. склада и ИЛ',
+  marketplace_logistics_avg: 'Логистика до клиента с ИЛ и ИРП: forward по выбранным складам с коэф. склада и общим кабинетным ИЛ + цена до скидки WB × общий кабинетный ИРП%. ИРП применяется только при ИЛ > 1; при ИЛ ≤ 1 действует только ИЛ без ИРП.',
   marketplace_storage_avg: 'Хранение за ед среднее / день: средняя дневная ставка хранения WB по выбранным складам',
   warehouse_logistics: 'Логистика WB по выбранным складам (из тарифов)',
   warehouse_storage: 'Хранение WB по выбранным складам (из тарифов)',
@@ -277,7 +277,7 @@ const RU_FORMULA_HINTS: Record<string, string> = {
   seller_discount: 'Вручную: Скидка продавца в % (активный сценарий)',
   wb_discount: 'Вручную: Скидка WB в % (активный сценарий)',
   buyout: 'Вручную: % выкупа. Используется только если авто-выкуп недоступен',
-  buyout_auto: 'Авто: % выкупа из WB-воронки. Включается при истории SKU >=30 дней, закрытых заказах >=10 и доле незакрытых <=40%',
+  buyout_auto: 'Авто: % выкупа из WB-воронки. Включается при истории SKU >=30 дней, закрытых заказах >=100 и доле незакрытых <=40%',
   cost_price_1: 'Из раздела «Себестоимость»: товар закупка за единицу',
   delivery_to_ff_1: 'Из раздела «Себестоимость»: доставка до фулфилмент-центра за единицу',
   packaging_1: 'Из раздела «Себестоимость»: стоимость упаковки за единицу',
@@ -423,13 +423,13 @@ export function getExportCellValue(
         ? clampPercent(toNumber(activeScenario?.buyoutPercent))
         : '';
     }
-    case 'buyout_auto':                  return summary.buyoutSource === 'auto' ? summary.buyoutAutoPercent : '';
+    case 'buyout_auto':                  return summary.buyoutSource === 'auto' && summary.buyoutAutoPercent > 0 ? summary.buyoutAutoPercent : '';
 
     case 'marketplace_fee_percent_1':    return summary.commissionPercent;
     case 'marketplace_fee_percent_2':    return summary.batchCommissionTotal;
     case 'marketplace_percent_total':    return summary.batchMarketplacePercentTotal;
     case 'marketplace_fee_rub':          return summary.commission;
-    case 'marketplace_logistics_avg':    return summary.logisticsPerUnit;
+    case 'marketplace_logistics_avg':    return summary.logisticsToClientWithIrp;
     case 'marketplace_logistics_to_spp': return summary.batchLogisticsToSppPercent;
     case 'marketplace_logistics_2':      return summary.batchLogisticsTotal;
     case 'marketplace_logistics_total':  return summary.logisticsTotalComputed;

@@ -89,6 +89,7 @@ describe('buildRowSummary — realistic FBW scenario (no warehouse tariffs)', ()
     deliveryToFf: '20',
     packagingMaterial: '10',
     fulfillment: '15',
+    localityIndexPercent: '1.2',
     irpPercent: '5',
     purchaseQtyTotal: '100',
     taxPercent: '6',
@@ -143,10 +144,10 @@ describe('buildRowSummary — realistic FBW scenario (no warehouse tariffs)', ()
 
   // Per WB 2026-03-23: ИРП is a separate surcharge = priceBeforeWbDiscount × ИРП %.
   // With manual irpPercent=5 and priceBeforeWbDiscount=1080, ИРП-add = 54.
-  // No warehouses → avg forward=0 → logistics_with_buyout=0, so logisticsTotal = 54.
+  // No warehouses → avg forward=0; logistics total is normalized by buyout.
   it('applies ИРП surcharge from price when irpPercent set manually', () => {
     expect(summary.irpSurcharge).toBe(54);
-    expect(summary.logisticsTotalComputed).toBe(roundCurrency(0 + 54));
+    expect(summary.logisticsTotalComputed).toBe(roundCurrency(54 / 0.8));
   });
 
   // acquiring = priceBeforeWbDiscount * 0.03 = 1080 * 0.03 = 32.4
@@ -155,12 +156,12 @@ describe('buildRowSummary — realistic FBW scenario (no warehouse tariffs)', ()
   });
 
   // marketplacePlusStorageTotal = commission + logisticsTotal + storageTotal + acquiring
-  // = 270 + 54 (ИРП-надбавка, no warehouses) + 0 + 32.4 = 356.4
+  // = 270 + (54 / 0.8) (ИРП-надбавка, normalized by buyout) + 0 + 32.4 = 369.9
   it('aggregates marketplace + storage + acquiring', () => {
-    expect(summary.marketplacePlusStorageTotal).toBe(roundCurrency(270 + 54 + 0 + roundCurrency(1080 * 0.03)));
+    expect(summary.marketplacePlusStorageTotal).toBe(roundCurrency(270 + roundCurrency(54 / 0.8) + 0 + roundCurrency(1080 * 0.03)));
   });
 
-  // toSettlementAccount = projectedRevenue - marketplacePlusStorageTotal = 1080 - 356.4 = 723.6
+  // toSettlementAccount = projectedRevenue - marketplacePlusStorageTotal = 1080 - 369.9 = 710.1
   it('computes toSettlementAccount = projectedRevenue - mp+storage', () => {
     expect(summary.toSettlementAccount).toBe(roundCurrency(1080 - summary.marketplacePlusStorageTotal));
   });
@@ -281,9 +282,9 @@ describe('buildRowSummary — buyout auto/manual source', () => {
   it('uses manual buyout while SKU has less than 30 days of history', () => {
     const row = makeRow({
       buyoutPercentFact: 80,
-      buyoutOrderCountFact: 20,
-      buyoutCountFact: 16,
-      buyoutCancelCountFact: 4,
+      buyoutOrderCountFact: 130,
+      buyoutCountFact: 80,
+      buyoutCancelCountFact: 30,
       buyoutHistoryDaysFact: 12,
     });
     const manual = makeManual({
@@ -299,7 +300,7 @@ describe('buildRowSummary — buyout auto/manual source', () => {
     const result = buildRowSummary(row, manual, NO_TARIFFS);
 
     expect(result.buyoutPercent).toBe(65);
-    expect(result.buyoutAutoPercent).toBe(0);
+    expect(result.buyoutAutoPercent).toBe(80);
     expect(result.buyoutManualPercent).toBe(65);
     expect(result.buyoutHistoryDays).toBe(12);
     expect(result.buyoutSource).toBe('manual');
@@ -308,9 +309,9 @@ describe('buildRowSummary — buyout auto/manual source', () => {
   it('uses WB auto buyout over manual fallback when SKU has 30+ days of history', () => {
     const row = makeRow({
       buyoutPercentFact: 80,
-      buyoutOrderCountFact: 20,
-      buyoutCountFact: 16,
-      buyoutCancelCountFact: 4,
+      buyoutOrderCountFact: 130,
+      buyoutCountFact: 80,
+      buyoutCancelCountFact: 30,
       buyoutHistoryDaysFact: 30,
     });
     const manual = makeManual({
@@ -361,9 +362,9 @@ describe('buildRowSummary — buyout auto/manual source', () => {
   it('falls back to manual when too many WB orders are still open', () => {
     const row = makeRow({
       buyoutPercentFact: 85,
-      buyoutOrderCountFact: 30,
-      buyoutCountFact: 10,
-      buyoutCancelCountFact: 2,
+      buyoutOrderCountFact: 200,
+      buyoutCountFact: 60,
+      buyoutCancelCountFact: 50,
       buyoutHistoryDaysFact: 45,
     });
     const manual = makeManual({
@@ -530,6 +531,36 @@ describe('buildRowSummary — ИЛ (locality index) auto from WB localizationPer
 });
 
 describe('buildRowSummary — ИРП (sales distribution surcharge)', () => {
+  it('uses the same cabinet ИЛ/ИРП for every SKU when provided', () => {
+    const row = makeRow({
+      soldQuantity: 1,
+      grossRevenue: 1000,
+      categoryCommissionPercentFbw: 25,
+      localizationPercent: 95,
+      cabinetLocalityIndex: 1.12,
+      cabinetIrpPercent: 0.83,
+    });
+    const manual = makeManual({
+      localityIndexPercent: '0.5',
+      irpPercent: '5',
+      activePriceScenarioId: 'average',
+      tradeScheme: 'fbw',
+      priceScenarios: {
+        excellent: { sellerPriceBeforeDiscount: '', sellerDiscount: '', wbDiscount: '', buyoutPercent: '' },
+        good: { sellerPriceBeforeDiscount: '', sellerDiscount: '', wbDiscount: '', buyoutPercent: '' },
+        average: { sellerPriceBeforeDiscount: '1000', sellerDiscount: '0', wbDiscount: '0', buyoutPercent: '90' },
+        poor: { sellerPriceBeforeDiscount: '', sellerDiscount: '', wbDiscount: '', buyoutPercent: '' },
+      },
+    });
+    const result = buildRowSummary(row, manual, NO_TARIFFS);
+    expect(result.localityIndexPercent).toBe(1.12);
+    expect(result.localityIndexSource).toBe('cabinet');
+    expect(result.irpPercent).toBe(0.83);
+    expect(result.irpDisplayPercent).toBe(0.83);
+    expect(result.irpSource).toBe('cabinet');
+    expect(result.irpSurcharge).toBe(8.3);
+  });
+
   it('auto-derives ИРП from WB localizationPercent when manual value is empty', () => {
     const row = makeRow({
       soldQuantity: 1,
@@ -549,6 +580,7 @@ describe('buildRowSummary — ИРП (sales distribution surcharge)', () => {
     });
     const result = buildRowSummary(row, manual, NO_TARIFFS);
     expect(result.irpPercent).toBe(2.35);
+    expect(result.irpDisplayPercent).toBe(2.35);
     expect(result.irpSource).toBe('auto');
     expect(result.irpSurcharge).toBe(23.5);
   });
@@ -569,9 +601,32 @@ describe('buildRowSummary — ИРП (sales distribution surcharge)', () => {
     });
     const result = buildRowSummary(row, manual, NO_TARIFFS);
     expect(result.irpPercent).toBe(5);
+    expect(result.irpDisplayPercent).toBe(5);
     expect(result.irpSource).toBe('manual');
     // priceBeforeWbDiscount = 1000 → surcharge = 1000 × 5/100 = 50
     expect(result.irpSurcharge).toBe(50);
+  });
+
+  it('does not apply ИРП when active ИЛ is 1 or lower', () => {
+    const row = makeRow({ soldQuantity: 1, grossRevenue: 1000, categoryCommissionPercentFbw: 25, localizationPercent: 10 });
+    const manual = makeManual({
+      localityIndexPercent: '0.83',
+      irpPercent: '0.83',
+      activePriceScenarioId: 'average',
+      tradeScheme: 'fbw',
+      priceScenarios: {
+        excellent: { sellerPriceBeforeDiscount: '', sellerDiscount: '', wbDiscount: '', buyoutPercent: '' },
+        good: { sellerPriceBeforeDiscount: '', sellerDiscount: '', wbDiscount: '', buyoutPercent: '' },
+        average: { sellerPriceBeforeDiscount: '1000', sellerDiscount: '0', wbDiscount: '0', buyoutPercent: '90' },
+        poor: { sellerPriceBeforeDiscount: '', sellerDiscount: '', wbDiscount: '', buyoutPercent: '' },
+      },
+    });
+    const result = buildRowSummary(row, manual, NO_TARIFFS);
+    expect(result.localityIndexPercent).toBe(0.83);
+    expect(result.irpPercent).toBe(0);
+    expect(result.irpDisplayPercent).toBe(0.83);
+    expect(result.irpSource).toBe('none');
+    expect(result.irpSurcharge).toBe(0);
   });
 
   it('FBS scheme zeros ИРП even with manual value', () => {
@@ -589,6 +644,7 @@ describe('buildRowSummary — ИРП (sales distribution surcharge)', () => {
     });
     const result = buildRowSummary(row, manual, NO_TARIFFS);
     expect(result.irpPercent).toBe(0);
+    expect(result.irpDisplayPercent).toBe(0);
     expect(result.irpSource).toBe('none');
     expect(result.irpSurcharge).toBe(0);
   });
@@ -682,7 +738,7 @@ describe('buildRowSummary — WB reverse logistics after 2026-03-20', () => {
     expect(result.logisticsPerUnit).toBe(29);
     // Reverse is the same WB tier by volume and has no warehouse coef/ИЛ/ИРП.
     expect(result.reverseLogisticsPerUnit).toBe(29);
-    expect(result.logisticsTotalComputed).toBe(roundCurrency(29 + 29));
+    expect(result.logisticsTotalComputed).toBe(0);
   });
 
   it('does not add reverse leg when buyout source is missing', () => {
@@ -761,11 +817,11 @@ describe('buildRowSummary — WB reverse logistics after 2026-03-20', () => {
       defaultTaxPercent: null,
     });
 
-    // WB 2026-03-20 formula: forward + (1 - buyout) × reverse
+    // Formula: (forward + (1 - buyout) × reverse) / buyout
     // forward = 29 (deliveryCoef=1.0, ИЛ=1.0, no extra liters)
     // reverse base = 29 (same tier as forward at 0.5 л)
     // итог = 29 + 0.5 × 29 = 43.5
-    expect(result.logisticsTotalComputed).toBe(roundCurrency(43.5));
+    expect(result.logisticsTotalComputed).toBe(roundCurrency(43.5 / 0.5));
   });
 
   it('does not multiply >1L WB tariff base by warehouse coefficient twice', () => {
@@ -852,7 +908,7 @@ describe('buildRowSummary — WB reverse logistics after 2026-03-20', () => {
     const forward = 92 + 28 * 1.5;
     const reverse = 46 + 14 * 1.5;
     expect(result.reverseLogisticsPerUnit).toBe(roundCurrency(reverse));
-    expect(result.logisticsTotalComputed).toBe(roundCurrency(forward + 0.5 * reverse));
+    expect(result.logisticsTotalComputed).toBe(roundCurrency((forward + 0.5 * reverse) / 0.5));
   });
 });
 

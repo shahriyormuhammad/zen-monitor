@@ -49,9 +49,9 @@ Next.js 16 (Turbopack) · Supabase Auth · PostgreSQL · Drizzle ORM · Inngest 
 
 1. Один backlog-item → один focused commit.
 2. Перед нетривиальной локальной работой — синхронизировать local/server SHA на `main`.
-3. Деплой через `ssh metric-pulse-app-01` → `git pull --ff-only` → build → systemctl restart.
-4. После деплоя — `/api/health` + parity SHA (local == server).
-5. Обновить `docs/CHANGELOG.md`.
+3. Деплой через `ssh metric-pulse-app-01` → `git pull --ff-only` → `npm run deploy:production:local`. Скрипт сам останавливает web-service перед сборкой, проверяет `.next/standalone`, запускает service и ждёт `/api/health`.
+4. После деплоя — убедиться, что `/api/health` ok и parity SHA local == server.
+5. Обновить `docs/CHANGELOG.md` для каждого изменения; это обязательное правило проекта.
 6. Если мигрировал что-то в `docs/operations/*` — запустить `node scripts/sync-claude-memory.mjs`.
 
 ## Checks по типу задачи

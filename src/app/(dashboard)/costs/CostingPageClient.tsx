@@ -15,7 +15,7 @@ import {
   readManualFields,
   saveManualFields,
 } from '@/components/economics/manual-fields-io';
-import { EMPTY_MANUAL_FIELDS, resolveIrpFromLocalization, resolveLocalityIndexMultiplierFromLocalization } from '@/components/economics/constants';
+import { EMPTY_MANUAL_FIELDS, resolveLocalityIndexMultiplierFromLocalization } from '@/components/economics/constants';
 import { formatCurrency, normalizeDecimalInput, toNumber } from '@/components/economics/helpers';
 import { resolveVolumeLiters } from '@/components/economics/tariff-helpers';
 import { buildRowSummary } from '@/components/economics/row-summary';
@@ -1005,9 +1005,6 @@ export function CostingPageClient({ tenantId }: { tenantId: string }) {
               const autoLocalityIndex = rowSummary.localizationPercent != null
                 ? resolveLocalityIndexMultiplierFromLocalization(rowSummary.localizationPercent)
                 : 1;
-              const autoIrpPercent = rowSummary.localizationPercent != null
-                ? resolveIrpFromLocalization(rowSummary.localizationPercent)
-                : 0;
               return (
                 <Fragment key={nmId}>
                   <tr
@@ -1140,20 +1137,9 @@ export function CostingPageClient({ tenantId }: { tenantId: string }) {
                               normalizedReturnTariffMap,
                             )}
                             volumeLiters={resolveVolumeLiters(row)}
-                            buyoutPercent={rowSummary.buyoutPercent}
-                            isBuyoutManual={rowSummary.buyoutSource === 'manual'}
-                            buyoutSource={rowSummary.buyoutSource}
-                            buyoutOrderCount={rowSummary.buyoutOrderCount}
-                            buyoutBuyoutCount={rowSummary.buyoutBuyoutCount}
-                            buyoutCancelCount={rowSummary.buyoutCancelCount}
-                            buyoutClosedCount={rowSummary.buyoutClosedCount}
-                            buyoutOpenCount={rowSummary.buyoutOpenCount}
-                            buyoutOpenShare={rowSummary.buyoutOpenShare}
-                            buyoutAutoWarning={rowSummary.buyoutAutoWarning}
                             tradeScheme={manualFields.tradeScheme}
                             irpPercent={rowSummary.irpPercent}
-                            irpSource={rowSummary.irpSource}
-                            autoIrpPercent={autoIrpPercent}
+                            irpDisplayPercent={rowSummary.irpDisplayPercent}
                             irpSurcharge={rowSummary.irpSurcharge}
                             localizationPercent={rowSummary.localizationPercent}
                             localityIndexSource={rowSummary.localityIndexSource}

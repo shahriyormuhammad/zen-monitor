@@ -264,7 +264,7 @@ export function buildRowSummary(
       wbDiscountPercent,
       priceAfterWb,
       buyoutManualPercent,
-      buyoutAutoPercent: rowCanUseAutoBuyout ? rowBuyoutAutoPercent : 0,
+      buyoutAutoPercent: rowBuyoutAutoPercent,
       buyoutHistoryDays: rowBuyoutHistoryDays,
       buyoutSource,
       buyoutPercent,
@@ -299,9 +299,12 @@ export function buildRowSummary(
     : 0;
   // === ИЛ (Индекс Локализации, КТР) — МНОЖИТЕЛЬ к прямой логистике ===
   // WB 2026-03-23: forward = (база+extra×additional) × коэф_склада × ИЛ.
-  // Auto от WB localizationPercent по официальной сетке КТР (0.5..2.0),
-  // ручной override через legacy-поле `localityIndexPercent`.
+  // Основной источник — единый кабинетный ИЛ из «Поставки → Тарифы».
+  // Если он ещё не загружен, legacy fallback оставляет ручной ввод и SKU-локализацию.
   // FBS → ИЛ = 1 (не применяется).
+  const cabinetLocalityIndexRaw = toNumber(targetRow?.cabinetLocalityIndex);
+  const hasCabinetLocalityIndex = cabinetLocalityIndexRaw > 0;
+  const cabinetLocalityIndex = normalizeLocalityIndexMultiplier(cabinetLocalityIndexRaw);
   const localityIndexManual = normalizeLocalityIndexMultiplier(toNumber(targetManualFields.localityIndexPercent));
   const rowLocalizationPercent = targetRow?.localizationPercent != null && Number.isFinite(Number(targetRow.localizationPercent))
     ? Number(targetRow.localizationPercent)
@@ -310,13 +313,19 @@ export function buildRowSummary(
     ? resolveLocalityIndexMultiplierFromLocalization(rowLocalizationPercent)
     : 1;
   const hasManualLocalityIndex = hasManualValue(targetManualFields.localityIndexPercent);
-  const localityMultiplierRaw = hasManualLocalityIndex ? localityIndexManual : localityIndexAuto;
+  const localityMultiplierRaw = hasCabinetLocalityIndex
+    ? cabinetLocalityIndex
+    : hasManualLocalityIndex
+      ? localityIndexManual
+      : localityIndexAuto;
   const localityMultiplier = tradeScheme === 'fbw' ? localityMultiplierRaw : 1;
   const localityIndexPercent = tradeScheme === 'fbw' ? localityMultiplier : 0;
-  const localityIndexSource: 'manual' | 'auto' | 'none' =
+  const localityIndexSource: 'cabinet' | 'manual' | 'auto' | 'none' =
     tradeScheme !== 'fbw'
       ? 'none'
-      : hasManualLocalityIndex
+      : hasCabinetLocalityIndex
+        ? 'cabinet'
+        : hasManualLocalityIndex
         ? 'manual'
         : rowLocalizationPercent != null
           ? 'auto'
@@ -325,19 +334,34 @@ export function buildRowSummary(
 
   // === ИРП (Индекс Распределения Продаж) — surcharge from price ===
   // WB 2026-03-23: дополнительная надбавка `priceBeforeWbDiscount × ИРП %`.
-  // Auto от WB localizationPercent по сетке ИРП/КРП, ручной ввод — override.
-  // FBS → ИРП = 0.
+  // Основной источник — единый кабинетный ИРП из «Поставки → Тарифы».
+  // Если он ещё не загружен, legacy fallback оставляет ручной ввод и SKU-локализацию.
+  // ИРП применяется только когда активный ИЛ > 1. При ИЛ <= 1 остается скидка
+  // по логистике без ценовой надбавки ИРП. FBS → ИРП = 0.
+  const cabinetIrpPercent = Math.max(0, toNumber(targetRow?.cabinetIrpPercent));
+  const hasCabinetIrp = targetRow?.cabinetIrpPercent !== null
+    && targetRow?.cabinetIrpPercent !== undefined
+    && targetRow?.cabinetIrpPercent !== ''
+    && Number.isFinite(Number(targetRow.cabinetIrpPercent));
   const irpPercentManual = clampPercent(toNumber(targetManualFields.irpPercent));
   const irpPercentAuto = rowLocalizationPercent != null
     ? resolveIrpFromLocalization(rowLocalizationPercent)
     : 0;
   const hasManualIrp = hasManualValue(targetManualFields.irpPercent) && irpPercentManual > 0;
-  const irpPercentRaw = hasManualIrp ? irpPercentManual : irpPercentAuto;
-  const irpPercent = tradeScheme === 'fbw' ? irpPercentRaw : 0;
-  const irpSource: 'manual' | 'auto' | 'none' =
-    tradeScheme !== 'fbw' || irpPercent === 0
+  const irpPercentRaw = hasCabinetIrp
+    ? cabinetIrpPercent
+    : hasManualIrp
+      ? irpPercentManual
+      : irpPercentAuto;
+  const canApplyIrp = tradeScheme === 'fbw' && localityMultiplier > 1;
+  const irpDisplayPercent = tradeScheme === 'fbw' ? irpPercentRaw : 0;
+  const irpPercent = canApplyIrp ? irpPercentRaw : 0;
+  const irpSource: 'cabinet' | 'manual' | 'auto' | 'none' =
+    !canApplyIrp || irpPercent === 0
       ? 'none'
-      : hasManualIrp
+      : hasCabinetIrp
+        ? 'cabinet'
+        : hasManualIrp
         ? 'manual'
         : 'auto';
   const irpSurcharge = irpPercent > 0 && projectedRevenue > 0
@@ -360,7 +384,14 @@ export function buildRowSummary(
     reverseLogisticsPerUnit,
     logisticsBuyoutPercent,
   );
-  const logisticsTotalComputed = roundCurrency(logisticsBaseWithBuyout + irpSurcharge);
+  const logisticsToClientWithIrp = roundCurrency(logisticsPerUnit + irpSurcharge);
+  const logisticsTotalBeforeBuyoutNormalization = roundCurrency(logisticsBaseWithBuyout + irpSurcharge);
+  const logisticsBuyoutRate = logisticsBuyoutPercent > 0 ? logisticsBuyoutPercent / 100 : 0;
+  // Итоговая логистика нормализуется на один ожидаемый выкуп: расходы по всем
+  // заказам распределяются только на выкупленные единицы.
+  const logisticsTotalComputed = logisticsBuyoutRate > 0
+    ? roundCurrency(logisticsTotalBeforeBuyoutNormalization / logisticsBuyoutRate)
+    : 0;
   const storageTotalComputed = roundCurrency(storagePerUnit * turnoverDays);
   const acquiringBasePerUnit = projectedRevenue;
   const acquiring = acquiringBasePerUnit > 0 ? roundCurrency(acquiringBasePerUnit * 0.03) : 0;
@@ -477,6 +508,7 @@ export function buildRowSummary(
     buyoutAutoReason: rowBuyoutAutoDiagnostics.reason,
     buyoutAutoWarning: rowBuyoutAutoWarning,
     irpPercent,
+    irpDisplayPercent,
     irpSource,
     irpSurcharge,
     localityIndexPercent,
@@ -487,6 +519,7 @@ export function buildRowSummary(
     logisticsPerUnit,
     reverseLogisticsPerUnit,
     returnToSellerPerUnit: avgWbReturnToSellerPerUnit,
+    logisticsToClientWithIrp,
     logisticsTotalComputed,
     storagePerUnit,
     storageTotalComputed,

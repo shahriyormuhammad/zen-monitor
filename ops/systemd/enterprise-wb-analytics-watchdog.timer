@@ -2,8 +2,9 @@
 Description=ops-watchdog every 5 minutes
 
 [Timer]
-OnBootSec=60s
+OnBootSec=45s
 OnUnitActiveSec=5min
+Persistent=true
 Unit=enterprise-wb-analytics-watchdog.service
 
 [Install]

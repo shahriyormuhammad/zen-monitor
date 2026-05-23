@@ -24,7 +24,7 @@ import type {
   WarehouseTariff,
   WarehouseReturnTariff,
 } from '../types';
-import { EMPTY_MANUAL_FIELDS, resolveIrpFromLocalization, resolveLocalityIndexMultiplierFromLocalization } from '../constants';
+import { EMPTY_MANUAL_FIELDS, resolveLocalityIndexMultiplierFromLocalization } from '../constants';
 import { COLUMNS, STRONG_GROUP_SEPARATOR_COLUMNS, resolveStickyIdentityColumnClass, resolveStrictWidthClasses } from './columns';
 import { TableHeader } from './TableHeader';
 import { HiddenProductsPanel } from './HiddenProductsPanel';
@@ -86,6 +86,38 @@ function formatPlainNumber(value: number, fractionDigits = 0) {
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   });
+}
+
+const COST_SOURCE_TEXT_FIELDS = ['costPrice', 'deliveryToFf', 'packagingMaterial', 'fulfillment'] as const;
+
+function mergeLocalCostDraft(serverFields: ManualFields, localFields: ManualFields): ManualFields {
+  let changed = false;
+  const next = cloneManualFields(serverFields);
+
+  for (const key of COST_SOURCE_TEXT_FIELDS) {
+    if (!hasManualValue(next[key]) && hasManualValue(localFields[key])) {
+      next[key] = localFields[key];
+      changed = true;
+    }
+  }
+
+  const serverHasWarehouses = next.selectedWarehouses.length > 0 || Object.keys(next.warehouseCosts).length > 0;
+  const localHasWarehouses = localFields.selectedWarehouses.length > 0 || Object.keys(localFields.warehouseCosts).length > 0;
+  if (!serverHasWarehouses && localHasWarehouses) {
+    const customById = new Map(next.customWarehouses.map((warehouse) => [warehouse.id, warehouse] as const));
+    for (const warehouse of localFields.customWarehouses) {
+      if (!customById.has(warehouse.id)) {
+        customById.set(warehouse.id, warehouse);
+      }
+    }
+    next.selectedWarehouses = [...localFields.selectedWarehouses];
+    next.warehouseCosts = { ...localFields.warehouseCosts };
+    next.customWarehouses = Array.from(customById.values());
+    next.warehouseAutoSelectionDisabled = localFields.warehouseAutoSelectionDisabled;
+    changed = true;
+  }
+
+  return changed ? next : serverFields;
 }
 
 /* ─────────────────────── inline-editable cells ───────────────────── */
@@ -439,8 +471,10 @@ export function EconomicsTable({
       const serverPayload = manualInputsByNm[String(itemNmId)];
       if (hasServerManualPayload(serverPayload)) {
         const parsed = parseManualFieldsFromUnknown(serverPayload);
-        next[itemNmId] = parsed;
-        saveManualFields(tenantId, itemNmId, parsed);
+        const localDraft = readManualFields(tenantId, itemNmId);
+        const merged = mergeLocalCostDraft(parsed, localDraft);
+        next[itemNmId] = merged;
+        saveManualFields(tenantId, itemNmId, merged);
       } else {
         next[itemNmId] = readManualFields(tenantId, itemNmId);
       }
@@ -1355,16 +1389,12 @@ export function EconomicsTable({
                       normalizedTariffMap,
                       normalizedReturnTariffMap,
                     );
-                    const itemBuyoutManual = itemSummary.buyoutSource === 'manual';
-                    const itemBuyoutPercent = itemSummary.buyoutPercent;
-                    // ИЛ (Индекс Локализации) — auto from WB localizationPercent ladder,
-                    // manual override via localityIndexPercent. Multiplier on forward.
-                    const itemAutoLocalityIndex = itemSummary.localizationPercent != null
-                      ? resolveLocalityIndexMultiplierFromLocalization(itemSummary.localizationPercent)
-                      : 1;
-                    const itemAutoIrp = itemSummary.localizationPercent != null
-                      ? resolveIrpFromLocalization(itemSummary.localizationPercent)
-                      : 0;
+                    // ИЛ (Индекс Локализации) — cabinet-wide value first, then legacy SKU fallback.
+                    const itemAutoLocalityIndex = itemSummary.localityIndexSource === 'cabinet'
+                      ? itemSummary.localityIndexPercent
+                      : itemSummary.localizationPercent != null
+                        ? resolveLocalityIndexMultiplierFromLocalization(itemSummary.localizationPercent)
+                        : 1;
                     return (
                       <tr className="bg-emerald-500/8">
                         <td colSpan={COLUMNS.length} className="border-b border-border p-0">
@@ -1382,20 +1412,9 @@ export function EconomicsTable({
                               costInputsReadOnly
                               warehouseRates={itemRates}
                               volumeLiters={itemVolumeLiters}
-                              buyoutPercent={itemBuyoutPercent}
-                              isBuyoutManual={itemBuyoutManual}
-                              buyoutSource={itemSummary.buyoutSource}
-                              buyoutOrderCount={itemSummary.buyoutOrderCount}
-                              buyoutBuyoutCount={itemSummary.buyoutBuyoutCount}
-                              buyoutCancelCount={itemSummary.buyoutCancelCount}
-                              buyoutClosedCount={itemSummary.buyoutClosedCount}
-                              buyoutOpenCount={itemSummary.buyoutOpenCount}
-                              buyoutOpenShare={itemSummary.buyoutOpenShare}
-                              buyoutAutoWarning={itemSummary.buyoutAutoWarning}
                               tradeScheme={itemManualFields.tradeScheme}
                               irpPercent={itemSummary.irpPercent}
-                              irpSource={itemSummary.irpSource}
-                              autoIrpPercent={itemAutoIrp}
+                              irpDisplayPercent={itemSummary.irpDisplayPercent}
                               irpSurcharge={itemSummary.irpSurcharge}
                               localizationPercent={itemSummary.localizationPercent}
                               localityIndexSource={itemSummary.localityIndexSource}
@@ -1403,6 +1422,7 @@ export function EconomicsTable({
                               acceptanceTariffsDate={null}
                               returnTariffsDate={null}
                               wbWarehouseNames={wbWarehouseNames ?? []}
+                              suggestedStockWarehouses={item.wbStockWarehouses ?? []}
                             />
                           </div>
                         </td>
