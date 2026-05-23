@@ -723,6 +723,21 @@ export const unitEconomicsManualInputs = pgTable('unit_economics_manual_inputs',
   tenantUpdatedIdx: index('unit_economics_manual_inputs_tenant_updated_idx').on(table.tenantId, table.updatedAt),
 }));
 
+export const tenantUnitEconomicsIndices = pgTable('tenant_unit_economics_indices', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  effectiveWeek: date('effective_week').notNull(),
+  localityIndex: numeric('locality_index', { precision: 8, scale: 4 }).default('1').notNull(),
+  irpPercent: numeric('irp_percent', { precision: 8, scale: 4 }).default('0').notNull(),
+  source: varchar('source', { length: 32 }).default('manual').notNull(),
+  rawData: jsonb('raw_data').$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  tenantUnitEconomicsIndicesTenantWeekIdx: uniqueIndex('tenant_unit_economics_indices_tenant_week_idx').on(table.tenantId, table.effectiveWeek),
+  tenantUnitEconomicsIndicesTenantFetchedIdx: index('tenant_unit_economics_indices_tenant_fetched_idx').on(table.tenantId, table.fetchedAt),
+}));
+
 // stockPlanningInputs (legacy 1-row-per-SKU planning inputs) was dropped in
 // P87 Stage 6, migration 0063. The data model is replaced by:
 //   - own_stock_batches + own_stock_movements (own warehouse with full history)

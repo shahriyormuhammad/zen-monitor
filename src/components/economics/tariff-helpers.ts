@@ -342,7 +342,7 @@ export function resolveVolumeLiters(row: UnitTemplateRow): number {
 }
 
 export const BUYOUT_AUTO_MIN_HISTORY_DAYS = 30;
-export const BUYOUT_AUTO_MIN_CLOSED_ORDERS = 10;
+export const BUYOUT_AUTO_MIN_CLOSED_ORDERS = 100;
 export const BUYOUT_AUTO_MAX_OPEN_SHARE = 0.4;
 
 export type RowBuyoutAutoDiagnostics = {

@@ -5,9 +5,6 @@ import { ChevronDown, ChevronUp, Plus, Search, X } from 'lucide-react';
 import {
   DEFAULT_WAREHOUSES,
   MAX_WAREHOUSES,
-  WB_REVERSE_BASE_ADDITIONAL_LITER,
-  WB_REVERSE_BASE_FIRST_LITER,
-  WB_STORAGE_BASE_UP_TO_ONE_LITER,
   normalizeLocalityIndexMultiplier,
 } from '../constants';
 import {
@@ -20,7 +17,6 @@ import {
 import type { ManualFields, RowSummary } from '../types';
 import { buildWarehouseOptions, isDefaultWarehouseId } from '../warehouse-options';
 import type { WarehouseRatesAggregate } from './warehouse-rates';
-import { NumberInput } from './NumberInput';
 
 function getReverseSourceLabel(source: 'wb_volume' | null): string {
   if (source === 'wb_volume') return 'WB 20.03, без коэф/ИЛ/ИРП';
@@ -48,30 +44,17 @@ type WarehousesPanelProps = {
   warehouseRates: WarehouseRatesAggregate;
   /** SKU volume in liters — used to label the formula description. */
   volumeLiters: number;
-  /** Effective buyout used by formulas: auto WB fact when eligible, otherwise manual fallback. */
-  buyoutPercent: number;
-  /** Whether the buyout came from the user (manual) or auto-derived from WB facts. */
-  isBuyoutManual: boolean;
-  buyoutSource: RowSummary['buyoutSource'];
-  buyoutOrderCount?: number;
-  buyoutBuyoutCount?: number;
-  buyoutCancelCount?: number;
-  buyoutClosedCount?: number;
-  buyoutOpenCount?: number;
-  buyoutOpenShare?: number;
-  buyoutAutoWarning?: string | null;
   /** «fbw» / «fbs» — tariff context (FBS skips ИЛ and ИРП). */
   tradeScheme: 'fbw' | 'fbs';
   /** Computed ИРП surcharge per 1 unit (₽) = priceBeforeWbDiscount × ИРП %. */
   irpPercent: number;
-  irpSource: 'manual' | 'auto' | 'none';
-  autoIrpPercent: number;
+  irpDisplayPercent: number;
   irpSurcharge: number;
   /** WB-reported localization share (0..100) or null if SKU has no funnel data yet. */
   localizationPercent: number | null;
-  /** Active ИЛ source — 'manual' (user value), 'auto' (derived from WB), or 'none'. */
-  localityIndexSource: 'manual' | 'auto' | 'none';
-  /** Auto-derived ИЛ coefficient from localization (rendered as "авто" hint). */
+  /** Active ИЛ source — cabinet/manual/legacy auto/none. */
+  localityIndexSource: RowSummary['localityIndexSource'];
+  /** Active auto/cabinet ИЛ coefficient rendered in the tariffs block. */
   autoLocalityIndex: number;
   /** Optional date strings for tariff freshness labels. */
   acceptanceTariffsDate?: string | null;
@@ -96,20 +79,9 @@ export function WarehousesPanel({
   costInputsReadOnly = false,
   warehouseRates,
   volumeLiters,
-  buyoutPercent,
-  isBuyoutManual,
-  buyoutSource,
-  buyoutOrderCount = 0,
-  buyoutBuyoutCount = 0,
-  buyoutCancelCount = 0,
-  buyoutClosedCount = 0,
-  buyoutOpenCount = 0,
-  buyoutOpenShare = 0,
-  buyoutAutoWarning = null,
   tradeScheme,
   irpPercent,
-  irpSource,
-  autoIrpPercent,
+  irpDisplayPercent,
   irpSurcharge,
   localizationPercent,
   localityIndexSource,
@@ -147,7 +119,7 @@ export function WarehousesPanel({
     ? 1
     : localityIndexSource === 'manual'
       ? normalizeLocalityIndexMultiplier(toNumber(manualFields.localityIndexPercent))
-      : localityIndexSource === 'auto'
+      : localityIndexSource === 'auto' || localityIndexSource === 'cabinet'
         ? autoLocalityIndex
         : 1;
   const ratesByWarehouseId = useMemo(
@@ -614,104 +586,13 @@ export function WarehousesPanel({
                     </p>
                   </div>
                   <div className="rounded-xl border border-border bg-muted/40 px-3 py-2.5 md:col-span-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Выкуп для расчёта логистики МП</p>
-                    <p className="mt-1 text-sm font-bold text-foreground">
-                      {buyoutSource !== 'none'
-                        ? `${buyoutPercent.toFixed(1)}% ${isBuyoutManual ? '(ручной)' : '(авто из факта WB)'}`
-                        : '—'}
-                    </p>
-                    <p className="mt-1 text-[10px] text-muted-foreground">
-                      База WB: выкупы {Math.round(buyoutBuyoutCount)}, отмены {Math.round(buyoutCancelCount)}, заказы {Math.round(buyoutOrderCount)}.
-                      Закрыто: {Math.round(buyoutClosedCount)}, незакрыто: {Math.round(buyoutOpenCount)} ({(buyoutOpenShare * 100).toFixed(0)}%).
-                    </p>
-                    {buyoutAutoWarning ? (
-                      <p className="mt-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                        {buyoutAutoWarning}
-                      </p>
-                    ) : null}
-                    <p className="mt-1 text-[10px] text-muted-foreground">
-                      Формула WB: forward + (1 − выкуп) × reverse
-                      {tradeScheme === 'fbw' ? ' + priceBeforeWbDiscount × ИРП' : ''},
-                      где forward для ≤1 л = порог WB за единицу × коэф склада{tradeScheme === 'fbw' ? ' × ИЛ' : ''}, а для &gt;1 л база/литр уже приходят из WB с коэф склада,
-                      reverse с 20.03.2026 считается только от литража: для ≤1 л по порогу WB за единицу, для &gt;1 л {formatNumber(WB_REVERSE_BASE_FIRST_LITER, 0)} + {formatNumber(WB_REVERSE_BASE_ADDITIONAL_LITER, 0)} × extra, без коэф склада, ИЛ и ИРП.
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-muted/40 px-3 py-2.5 md:col-span-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">ИЛ — Индекс Локализации (множитель к forward)</p>
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <NumberInput
-                        value={manualFields.localityIndexPercent}
-                        placeholder={localityIndexSource === 'auto' ? autoLocalityIndex.toFixed(2) : '1'}
-                        widthClass="w-20"
-                        onChange={(value) => onUpdate({ ...manualFields, localityIndexPercent: value })}
-                      />
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {tradeScheme === 'fbw' ? 'forward × ИЛ. Вводите коэффициент WB, например 1.01 или 0.50; авто — оценка по локализации.' : 'Не применяется в FBS'}
-                      </span>
-                      {tradeScheme === 'fbw' && localityIndexSource === 'auto' && localizationPercent != null ? (
-                        <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
-                          авто ИЛ {autoLocalityIndex.toFixed(2)} (WB локализация {localizationPercent.toFixed(0)}%)
-                        </span>
-                      ) : null}
-                      {tradeScheme === 'fbw' && localityIndexSource === 'manual' && localizationPercent != null ? (
-                        <span className="text-[10px] text-muted-foreground">
-                          WB локализация {localizationPercent.toFixed(0)}%, авто ИЛ = {autoLocalityIndex.toFixed(2)}
-                        </span>
-                      ) : null}
-                      {tradeScheme === 'fbw' && localityIndexSource === 'none' && localizationPercent != null ? (
-                        <span className="text-[10px] text-muted-foreground">
-                          WB локализация {localizationPercent.toFixed(0)}%, авто ИЛ = {autoLocalityIndex.toFixed(2)}
-                        </span>
-                      ) : null}
-                      {tradeScheme === 'fbw' && localityIndexSource === 'none' && localizationPercent == null ? (
-                        <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                          нет данных WB — введите вручную
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="mt-1 text-[10px] text-muted-foreground">
-                      ИЛ для расчёта: {tradeScheme === 'fbw' ? activeLocalityIndex.toFixed(2) : '1.00'}.
-                      {' '}
-                      Базовые WB-параметры: первый литр {formatNumber(WB_REVERSE_BASE_FIRST_LITER, 0)} ₽, доп. литр {formatNumber(WB_REVERSE_BASE_ADDITIONAL_LITER, 0)} ₽,
-                      хранение до 1 л {formatNumber(WB_STORAGE_BASE_UP_TO_ONE_LITER, 2)} ₽/день.
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-border bg-muted/40 px-3 py-2.5 md:col-span-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">ИРП — Индекс Распределения Продаж (надбавка от цены)</p>
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <NumberInput
-                        value={manualFields.irpPercent}
-                        placeholder={irpSource === 'auto' ? autoIrpPercent.toFixed(2) : '0'}
-                        widthClass="w-20"
-                        onChange={(value) => onUpdate({ ...manualFields, irpPercent: value })}
-                      />
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {tradeScheme === 'fbw' ? '+ priceBeforeWbDiscount × ИРП/100. Авто — оценка по WB-сетке от локализации.' : 'Не применяется в FBS'}
-                      </span>
-                      {tradeScheme === 'fbw' && irpSource === 'auto' && localizationPercent != null ? (
-                        <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
-                          авто {autoIrpPercent.toFixed(2)}% (WB локализация {localizationPercent.toFixed(0)}%)
-                        </span>
-                      ) : null}
-                      {tradeScheme === 'fbw' && irpSource === 'manual' && localizationPercent != null ? (
-                        <span className="text-[10px] text-muted-foreground">
-                          WB локализация {localizationPercent.toFixed(0)}%, авто = {autoIrpPercent.toFixed(2)}%
-                        </span>
-                      ) : null}
-                      {tradeScheme === 'fbw' && irpSource === 'none' && localizationPercent != null ? (
-                        <span className="text-[10px] text-muted-foreground">
-                          WB локализация {localizationPercent.toFixed(0)}%, авто = {autoIrpPercent.toFixed(2)}%
-                        </span>
-                      ) : null}
-                      {tradeScheme === 'fbw' && irpSource === 'none' && localizationPercent == null ? (
-                        <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                          нет данных WB — введите вручную
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="mt-1 text-[10px] text-muted-foreground">
-                      ИРП для расчёта: {tradeScheme === 'fbw' ? `${formatNumber(irpPercent, 2)}%` : '0%'}.
-                      {' '}Добавка за 1 ед: {tradeScheme === 'fbw' && irpSurcharge > 0 ? formatCurrency(irpSurcharge, 2) : '0 ₽'}.
+                    <p className="text-sm font-bold text-foreground">
+                      ИЛ {tradeScheme === 'fbw' ? activeLocalityIndex.toFixed(2) : '1.00'}
+                      {' · '}
+                      ИРП {tradeScheme === 'fbw' ? `${formatNumber(irpDisplayPercent, 2)}%` : '0%'}
+                      {tradeScheme === 'fbw' && irpDisplayPercent > 0 && irpPercent === 0 ? ' · не применяется' : ''}
+                      {tradeScheme === 'fbw' && irpSurcharge > 0 ? ` · ${formatCurrency(irpSurcharge, 2)}/ед` : ''}
+                      {localizationPercent != null ? ` · WB локализация ${localizationPercent.toFixed(0)}%` : ''}
                     </p>
                   </div>
                 </div>

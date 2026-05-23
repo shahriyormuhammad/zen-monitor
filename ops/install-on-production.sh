@@ -6,6 +6,7 @@
 # Applies:
 #   * /etc/nginx/sites-available/enterprise-wb-analytics (production reverse proxy)
 #   * /etc/systemd/system/enterprise-wb-analytics.service (Next standalone prestart guard)
+#   * /etc/systemd/system/enterprise-wb-analytics-supabase.service (local Supabase stack with boot retry)
 #   * /etc/systemd/system/enterprise-wb-analytics-*-worker.service (domain worker apps)
 #   * /etc/systemd/system/enterprise-wb-analytics-*-inngest.service (domain Inngest runtimes)
 #   * enterprise-wb-network-hardening.service + /usr/local/sbin firewall script
@@ -75,6 +76,7 @@ fi
 echo "[3/7] Installing systemd units"
 chmod 0755 "$REPO/ops/prepare-next-standalone.sh"
 install -m 0755 ops/network/enterprise-wb-network-hardening.sh /usr/local/sbin/enterprise-wb-network-hardening.sh
+install -m 0644 ops/systemd/enterprise-wb-analytics-supabase.service /etc/systemd/system/
 install -m 0644 ops/systemd/enterprise-wb-analytics.service           /etc/systemd/system/
 install -m 0644 ops/systemd/enterprise-wb-analytics-sync-worker.service /etc/systemd/system/
 install -m 0644 ops/systemd/enterprise-wb-analytics-inngest.service   /etc/systemd/system/
@@ -94,6 +96,8 @@ systemctl disable --now \
   enterprise-wb-analytics-advertising-inngest.service \
   enterprise-wb-analytics-reviews-inngest.service || true
 systemctl enable --now \
+  enterprise-wb-analytics-supabase.service \
+  enterprise-wb-analytics.service \
   enterprise-wb-analytics-sync-worker.service \
   enterprise-wb-analytics-redistribution-worker.service \
   enterprise-wb-analytics-advertising-worker.service \

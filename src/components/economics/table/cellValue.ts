@@ -147,8 +147,8 @@ export function resolveCellText(
         : '—';
     }
     case 'buyout_auto':
-      return summary.buyoutSource === 'auto'
-        ? `${formatPercent(summary.buyoutAutoPercent, 1)}*`
+      return summary.buyoutSource === 'auto' && summary.buyoutAutoPercent > 0
+        ? formatPercent(summary.buyoutAutoPercent, 1)
         : '—';
 
     // Marketplace fees
@@ -163,7 +163,7 @@ export function resolveCellText(
 
     // Logistics
     case 'marketplace_logistics_avg':
-      return summary.logisticsPerUnit > 0 ? formatCurrency(summary.logisticsPerUnit, 2) : '—';
+      return summary.logisticsToClientWithIrp > 0 ? formatCurrency(summary.logisticsToClientWithIrp, 2) : '—';
     case 'marketplace_logistics_to_spp':
       return summary.batchLogisticsToSppPercent > 0 ? formatPercent(summary.batchLogisticsToSppPercent, 1) : '—';
     case 'marketplace_logistics_total':

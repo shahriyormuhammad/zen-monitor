@@ -98,10 +98,14 @@ const BLOCKING_ROUTE_STATUSES = ["limit_exhausted", "route_unavailable"] as cons
 const MONITORED_ITEM_STATUSES = ["planned", "rpa_queued", "rpa_failed"] as const;
 const LIVE_PLAN_DEDUP_ITEM_STATUSES = [...MONITORED_ITEM_STATUSES, "rpa_running"] as const;
 const TARGET_SLOT_MONITOR_EVENT_SOURCES = [
+  "stock_control_slot_probe",
+  "stock_control_auto_submit",
   "http_slot_monitor_probe",
   "http_slot_monitor_auto_submit",
 ] as const;
 const MATRIX_SLOT_MONITOR_EVENT_SOURCES = [
+  "stock_control_quota_monitor",
+  "stock_control_slot_matrix_monitor",
   "http_quota_monitor",
   "http_slot_matrix_monitor",
 ] as const;
@@ -644,7 +648,7 @@ async function updateMonitorItemStatuses(tenantId: string, result: Redistributio
         await tx.update(redistributionItems)
           .set({
             status: "rpa_submitted",
-            executionNote: `http_order_submitted: ${item.submittedUnits} шт; srcQuota=${item.srcQuota ?? "-"}; dstQuota=${item.dstQuota ?? "-"}`,
+            executionNote: `${item.submitReason ?? "http_order_submitted"}: ${item.submittedUnits} шт; srcQuota=${item.srcQuota ?? "-"}; dstQuota=${item.dstQuota ?? "-"}`,
             executedAt: finishedAt,
             updatedAt: finishedAt,
           })
@@ -659,7 +663,7 @@ async function updateMonitorItemStatuses(tenantId: string, result: Redistributio
         await tx.update(redistributionItems)
           .set({
             status: "rpa_failed",
-            executionNote: `http_slot_monitor_${item.status}: ${item.reason}; srcQuota=${item.srcQuota ?? "-"}; dstQuota=${item.dstQuota ?? "-"}`,
+            executionNote: `${item.contour ?? "http"}_slot_monitor_${item.status}: ${item.reason}; srcQuota=${item.srcQuota ?? "-"}; dstQuota=${item.dstQuota ?? "-"}`,
             updatedAt: finishedAt,
           })
           .where(and(
@@ -714,7 +718,7 @@ export async function runSlotMonitorForTenant(
   const maxRoutesPerTenant = resolveMaxRoutesPerTenant(options?.maxRoutesPerTenant);
   const matrixMaxNmPerTenant = resolveMatrixMaxNmPerTenant(options?.matrixMaxNmPerTenant);
   const matrixMaxRoutesPerTenant = resolveMatrixMaxRoutesPerTenant(options?.matrixMaxRoutesPerTenant);
-  const monitorSource = options?.source ?? (autoSubmit ? "http_slot_monitor_auto_submit" : "http_slot_monitor_probe");
+  const monitorSource = options?.source ?? (autoSubmit ? "stock_control_auto_submit" : "stock_control_slot_probe");
   const triggerSource = options?.triggerSource ?? "scheduler";
   const monitorMode = options?.monitorMode ?? "unknown";
 
@@ -874,8 +878,8 @@ export async function runSlotMonitorForTenant(
       matrixNmIds,
       matrixRouteLimit: matrixMaxRoutesPerTenant,
       availabilitySource: monitorSource,
-      quotaSource: "http_quota_monitor",
-      matrixSource: "http_slot_matrix_monitor",
+      quotaSource: "stock_control_quota_monitor",
+      matrixSource: "stock_control_slot_matrix_monitor",
     });
     await updateMonitorItemStatuses(tenantId, probeResult);
     const resultMessage = targetRateLimited

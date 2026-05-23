@@ -8,6 +8,7 @@ import {
 } from "./wb-scheduled-sync";
 import { wbSyncRecoveryJob } from "./wb-sync-recovery";
 import { wbSupplyWriteoffsJob } from "./wb-supply-writeoffs";
+import { wbCabinetIndicesWeeklyJob } from "./wb-cabinet-indices";
 import { staleSyncAlertJob } from "@/inngest/stale-sync-alert";
 import { wbTokenPreflightJob } from "@/inngest/wb-token-preflight";
 
@@ -20,6 +21,7 @@ export const syncInngestFunctions = [
   wbSyncRecoveryJob,
   wbSupplyWriteoffsJob,
   wbSppSnapshotJob,
+  wbCabinetIndicesWeeklyJob,
   staleSyncAlertJob,
   wbTokenPreflightJob,
 ];

@@ -715,6 +715,20 @@
       "when": 1779437611807,
       "tag": "0107_freight_reimbursement_not_income",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1779519600000,
+      "tag": "0108_tenant_unit_economics_indices",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1779526320000,
+      "tag": "0109_exact_cabinet_indices_source",
+      "breakpoints": true
     }
   ]
 }

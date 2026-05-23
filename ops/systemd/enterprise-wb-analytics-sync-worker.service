@@ -2,7 +2,6 @@
 Description=Enterprise WB Analytics Sync Worker App
 After=network.target enterprise-wb-analytics.service
 Wants=enterprise-wb-analytics.service
-Requires=enterprise-wb-analytics.service
 
 [Service]
 Type=simple

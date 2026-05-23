@@ -2,6 +2,182 @@
 
 All notable project-management and implementation changes for `enterprise-wb-analytics` should be recorded here.
 
+## 2026-05-23 · Unit Economics cabinet-wide IL/IRP
+
+- Added tenant-level storage for cabinet-wide Unit Economics indices (`tenant_unit_economics_indices`) so ИЛ and ИРП are shared across all SKU rows for the cabinet.
+- Changed Unit Economics rows to prefer cabinet-level ИЛ/ИРП over per-SKU localization-derived values; SKU localization remains only as a legacy fallback/diagnostic.
+- Added a weekly Monday 10:00 Moscow background job for cabinet index refresh from WB Seller `Поставки и заказы → Тарифы` data (`weekly-rating`): `localization.percent` is cabinet ИЛ and `localization.pricePercent` is cabinet ИРП.
+- Added a top-of-page Unit Economics cabinet block that shows the current ИЛ/ИРП source (`WB`, `Вручную`, or `Нет данных`) and lets users set one manual pair for the whole cabinet when WB data is unavailable.
+- Manual cabinet ИЛ/ИРП values now apply to every SKU row, while the next successful WB tariff refresh overwrites the manual pair for the same cabinet week.
+- Disabled the approximate 13-week per-SKU fallback for cabinet indices: automatic values now come only from exact WB tariff data, while missing values remain neutral/manual instead of being estimated.
+- Preserved the rule that ИРП applies only when active ИЛ is greater than 1; ИЛ below 1 still discounts forward logistics.
+- Kept the raw ИРП visible in the warehouse panel even when it is not applied by the `ИЛ <= 1` rule; the panel now marks it as `не применяется` while formulas keep the surcharge at 0.
+- Refreshed production cabinet indices from WB: ИП Бербека `ИЛ 1.04`, `ИРП 0.83%`; ИП Лавров `ИЛ 1.00`, `ИРП 0.33%` for week `2026-05-18`.
+
+**Checks:** `npm run db:migration:check`, `GIT_PAGER=cat git diff --check`, `npm run test -- src/components/economics/row-summary.test.ts src/components/economics/tariff-helpers.test.ts`, `npm run typecheck`, `npm run db:migrate`, WB LK refresh for ИП Бербека and ИП Лавров.
+
+---
+
+## 2026-05-23 · Unit Economics IRP gating by IL
+
+- Changed Unit Economics logistics so ИРП applies only when the active ИЛ multiplier is greater than 1.
+- When ИЛ is 1 or lower, ИРП is forced to 0 while ИЛ still discounts forward logistics when below 1.
+- Added a row-summary regression test for `ИЛ 0.83` with manual `ИРП 0.83%` to ensure no ИРП surcharge is charged.
+- Updated table and Excel formula help text to describe the ИЛ/ИРП gate.
+
+**Checks:** `GIT_PAGER=cat git diff --check`, `npm run test -- src/components/economics/row-summary.test.ts src/components/economics/tariff-helpers.test.ts`, `npm run typecheck`.
+
+---
+
+## 2026-05-22 · Unit Economics buyout column labels
+
+- Renamed Unit Economics table columns from `Выкуп ручной` to `Ручной % выкупа` and from `Выкуп авто` to `Автоматический % выкупа`.
+- Increased the column widths so the new labels fit cleanly in the table header.
+
+**Checks:** `GIT_PAGER=cat git diff --check`, `npm run typecheck`.
+
+---
+
+## 2026-05-22 · Unit Economics auto-buyout 90-day WB base
+
+- Changed Unit Economics auto-buyout facts to use the accumulated WB base for the selected end date with at least a 90-day lookback, instead of only the narrow table date filter.
+- Backfilled WB LK per-SKU funnel data for ИП Бербека from 2026-03-01 through 2026-05-22, saving 3092 rows.
+- This keeps `Выкуп авто` stable for short table periods: if the 90-day WB base passes 30 days of history, 100 closed outcomes, and max 40% open orders, the auto percentage is shown and used; otherwise the cell stays `—` and manual buyout is used.
+
+**Checks:** `GIT_PAGER=cat git diff --check`, `npm run typecheck`, `npm run test -- src/components/economics/tariff-helpers.test.ts src/components/economics/row-summary.test.ts src/components/economics/table/cellValue.test.ts src/components/economics/helpers.test.ts`, DB check: 36 ИП Лавров and 5 ИП Бербека SKUs pass auto-buyout guardrails on the 90-day WB base; `199980160` resolves to 70.28%.
+
+---
+
+## 2026-05-22 · Unit Economics WB LK buyout fallback
+
+- Added WB LK per-SKU daily funnel data (`raw_api_sales_funnel_nm_daily`) as a fallback source for the Unit Economics auto-buyout facts when the official funnel table is empty.
+- Included official/LK funnel dates in SKU activity history so the 30-day auto-buyout guardrail can pass from funnel facts, not only raw orders/sales.
+- Kept the display rule: `Выкуп авто` shows a percentage only when the auto-buyout guardrails pass; otherwise it shows `—` and formulas use the manual buyout column.
+
+**Checks:** `GIT_PAGER=cat git diff --check`, `npm run typecheck`, WB LK backfill for ИП Лавров on 2026-05-21..2026-05-22 saved 100 per-SKU rows.
+
+---
+
+## 2026-05-22 · Unit Economics auto-buyout display rule
+
+- Changed the `Выкуп авто` column to show a percentage only when WB auto-buyout is actually applied by the guardrails.
+- Rows that have WB buyout facts but fail the auto-buyout rules now show `—` in `Выкуп авто`; calculations continue to use the manual buyout column.
+- Updated Excel export and cell-value tests to match the display rule.
+
+**Checks:** `npm run test -- src/components/economics/table/cellValue.test.ts src/components/economics/tariff-helpers.test.ts src/components/economics/row-summary.test.ts src/components/economics/helpers.test.ts`, `GIT_PAGER=cat git diff --check`, `npm run typecheck`.
+
+---
+
+## 2026-05-22 · Unit Economics auto-buyout server guardrail sync
+
+- Synced the server-side analytics auto-buyout history guardrail with the Unit Economics table rule: SKU history >= 30 days and closed WB outcomes >= 100 before WB auto-buyout can be trusted.
+- Updated the Excel formula reference so exported Unit Economics docs no longer mention the old >=10 closed-order threshold.
+
+**Checks:** `npm run test -- src/components/economics/tariff-helpers.test.ts src/components/economics/row-summary.test.ts src/components/economics/table/cellValue.test.ts src/components/economics/helpers.test.ts`, `GIT_PAGER=cat git diff --check`, `npm run typecheck`.
+
+---
+
+## 2026-05-22 · Production deploy guardrail for visible changes
+
+- Added `npm run deploy:production:local` as the canonical server-side deploy command: it stops the web service before building, requires a complete `.next/standalone` artifact, prepares runtime assets, starts systemd, and waits for `/api/health` to report ok.
+- Updated project agent rules so future changes must be recorded in `docs/CHANGELOG.md` and deployed through the guarded command instead of a manual build/restart sequence.
+
+**Checks:** `bash -n ops/deploy-production-local.sh`, `GIT_PAGER=cat git diff --check`, `npm run typecheck`.
+
+---
+
+## 2026-05-22 · Unit Economics logistics buyout normalization restored
+
+- Restored the Unit Economics `Итоговая логистика с % выкупа` column name and per-buyout logistics formula: `(forward с ИЛ/ИРП + reverse × (1 - выкуп/100)) / (выкуп/100)`.
+- Updated the column help text, Excel formula reference, and row-summary tests so the browser build and exports describe the same calculation.
+
+**Checks:** `npm run test -- src/components/economics/tariff-helpers.test.ts src/components/economics/row-summary.test.ts src/components/economics/table/cellValue.test.ts src/components/economics/helpers.test.ts`, `GIT_PAGER=cat git diff --check`, `npm run typecheck`, `npm run build`, `systemctl stop enterprise-wb-analytics.service`, `npm run build`, `ops/prepare-next-standalone.sh`, `systemctl start enterprise-wb-analytics.service`, `/api/health` ok, built `/economics-v2` chunk contains `Итоговая логистика\nс % выкупа`.
+
+---
+
+## 2026-05-22 · Unit Economics auto-buyout confidence threshold
+
+- Raised the Unit Economics auto-buyout guardrail from at least 10 closed WB outcomes to at least 100 closed outcomes while keeping the existing 30-day SKU history and max 40% open-order share checks.
+- Updated the `Выкуп авто` column help/formula hints and tests so the UI explains the new confidence threshold consistently.
+
+**Checks:** `npm run test -- src/components/economics/tariff-helpers.test.ts src/components/economics/row-summary.test.ts src/components/economics/table/cellValue.test.ts src/components/economics/helpers.test.ts`, `git diff --check`, `npm run typecheck`, `npm run build`, `systemctl restart enterprise-wb-analytics.service`, `/api/health` ok.
+
+---
+
+## 2026-05-22 · Production boot self-healing
+
+- Removed hard `Requires` chains between web, worker, Inngest, and Supabase
+  systemd units so a single early boot dependency failure no longer leaves the
+  whole application inactive.
+- Made `enterprise-wb-analytics-watchdog.timer` run earlier after boot,
+  persist missed runs, and auto-start monitored inactive/failed units in a
+  safe order: Postgres/Docker/Supabase first, then web, workers, Inngest, and
+  nginx.
+- Updated the remote deploy script to install tracked systemd units before
+  `daemon-reload`, so boot-hardening changes are applied on every deploy.
+- Added retry/cleanup around production `npm ci` to recover from transient
+  package download resets without leaving `node_modules` half-installed.
+- Documented the boot behavior and added watchdog recovery env flags.
+
+**Checks:** `node --check scripts/ops-watchdog.mjs`,
+`bash -n ops/install-on-production.sh scripts/deploy-remote-production.sh`,
+`git diff --check`, `npm run lint` (existing warning in
+`scripts/backfill_sales_funnel_nm.ts`), GitHub Actions deploy `26300344829`
+success, primary/secondary `/api/health` OK, primary watchdog self-heal test
+restarted `enterprise-wb-analytics-reviews-worker.service`.
+
+---
+
+## 2026-05-22 · Supabase boot retry for production
+
+- Tracked the production `enterprise-wb-analytics-supabase.service` unit in
+  `ops/systemd` and added `Restart=on-failure` with a 15s retry delay so a
+  server reboot cannot leave the web app blocked when Supabase containers are
+  still warming up.
+- Updated the production installer and server topology note to keep this
+  systemd behavior reproducible.
+
+**Checks:** production `systemctl show` confirmed the retry drop-in is active;
+production `/api/health` returned `ok` after recovery.
+
+---
+
+## 2026-05-22 · Redistribution stock-control API migration
+
+- Switched redistribution HTTP probing and auto-submit to WB's new
+  `/stock-control` contour: `transfer/list`, `transfer/AvailableLimits`, and
+  `transfer/order`.
+- Kept the old `/ns/shifts` probe as a technical fallback only; access errors
+  and 429 rate limits stay on the stock-control path so disabled cabinets and
+  WB throttling are not hammered by the legacy contour.
+- Slot-monitor events now use `stock_control_*` sources for target routes,
+  quota snapshots, and matrix scans while still reading old `http_*` events
+  for backoff compatibility.
+
+**Checks:** `npm run test -- src/server/redistribution/wb-lk-http.test.ts src/server/jobs/redistribution-slot-monitor.test.ts`,
+`npm run typecheck`.
+
+---
+
+## 2026-05-22 · Unit Economics warehouse/logistics display follow-up
+
+- Unit Economics now pre-fills costed SKU warehouse selections from the top WB
+  stock warehouses when saved cost fields have no warehouse selection yet, and
+  still preserves local unsaved cost drafts instead of overwriting them with a
+  stale server payload.
+- Changed `Логистика до клиента` to include both ИЛ and ИРП in the displayed
+  value; renamed the total column to `Итоговая с % выкупа`.
+- Removed the extra buyout formula card and manual ИЛ/ИРП inputs from the
+  warehouse detail panel; it now shows compact read-only `ИЛ / ИРП` values.
+- `Выкуп авто` now remains visible when WB fact exists but is not used as the
+  effective buyout because of the auto-buyout guardrails.
+
+**Checks:** `npm run test -- src/components/economics/row-summary.test.ts src/components/economics/table/cellValue.test.ts 'src/app/(dashboard)/costs/costing-helpers.test.ts'`,
+`npm run typecheck`, `npm run lint` (existing warning in
+`scripts/backfill_sales_funnel_nm.ts`), `npm run build`, `git diff --check`.
+
+---
+
 ## 2026-05-22 · Production deploy serialization
 
 - Added a production deploy lock at

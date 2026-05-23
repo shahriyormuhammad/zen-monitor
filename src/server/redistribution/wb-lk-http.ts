@@ -17,6 +17,9 @@ import {
 } from "@/server/wb/lk-refresh-flow";
 
 const WB_SHIFTS_BASE_URL = "https://seller-weekly-report.wildberries.ru/ns/shifts/analytics-back/api/v1";
+const WB_STOCK_CONTROL_TRANSFER_LIST_URL = "https://seller-supply.wildberries.ru/ns/goods-return/supply-manager/api/v1/transfer/list";
+const WB_STOCK_CONTROL_TRANSFER_LIMITS_URL = "https://seller-supply.wildberries.ru/ns/goods-return/supply-manager/api/v1/transfer/AvailableLimits";
+const WB_STOCK_CONTROL_TRANSFER_ORDER_URL = "https://seller-supply.wildberries.ru/ns/goods-return/supply-manager/api/v1/transfer/order";
 const DEFAULT_LIMIT = 20;
 
 export type WbRedistributionNm = {
@@ -28,6 +31,9 @@ export type WbRedistributionStockSize = {
   techSize: string;
   chrtID: number;
   count: number;
+  warehouseID?: number;
+  warehouseName?: string;
+  dstWarehouseIDs?: number[];
 };
 
 export type WbRedistributionSourceWarehouse = {
@@ -59,6 +65,51 @@ export type WbRedistributionQuotaResponse = {
   errorText?: string;
 };
 
+type WbJsonRpcResponse<T> = {
+  id?: string;
+  jsonrpc?: string;
+  result?: T;
+  error?: {
+    code?: number;
+    message?: string;
+  };
+};
+
+type WbStockControlTransferChrt = {
+  count: number;
+  chrtID: number;
+  sizeName: string;
+  warehouseID: number;
+  warehouseName: string;
+  dstWarehouseIDs: number[];
+};
+
+type WbStockControlTransferListResult = {
+  transfers?: Array<{
+    nmID: number;
+    chrts: WbStockControlTransferChrt[];
+  }>;
+};
+
+type WbStockControlQuota = {
+  displayName?: string;
+  dstQuota: number;
+  officeID: number;
+  officeName: string;
+  srcQuota: number;
+};
+
+type WbStockControlAvailableLimitsResult = {
+  data?: {
+    quotas?: WbStockControlQuota[];
+  };
+};
+
+type WbStockControlOrderResult = {
+  file?: string;
+  mime?: string;
+};
+
 export type RedistributionHttpSlotStatus =
   | "available"
   | "limit_exhausted"
@@ -86,6 +137,7 @@ export type RedistributionHttpSlotProbeItem = {
   submitted: boolean;
   submittedUnits: number;
   submitReason: string | null;
+  contour?: "stock_control" | "legacy_shifts";
 };
 
 export type RedistributionHttpSlotProbeResult = {
@@ -375,6 +427,187 @@ async function submitRedistributionOrder(
   return response;
 }
 
+function buildWbJsonRpcBody(params?: unknown) {
+  return {
+    id: `json-rpc_procifry_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    jsonrpc: "2.0",
+    ...(params === undefined ? {} : { params }),
+  };
+}
+
+function unwrapWbJsonRpcResult<T>(response: WbJsonRpcResponse<T> | T): T {
+  const rpc = response as WbJsonRpcResponse<T>;
+  if (rpc.error) {
+    throw new Error(rpc.error.message || `wb_jsonrpc_error_${rpc.error.code ?? "unknown"}`);
+  }
+  return rpc.result ?? (response as T);
+}
+
+async function fetchStockControlTransferList(
+  session: WbLkReadSession,
+  nmIds: number[],
+) {
+  const uniqueNmIds = Array.from(new Set(nmIds.filter((nmId) => Number.isFinite(nmId) && nmId > 0)));
+  if (!uniqueNmIds.length) {
+    return { transfers: [] } satisfies WbStockControlTransferListResult;
+  }
+
+  const response = await fetchWbLkReadOnlyJson<WbJsonRpcResponse<WbStockControlTransferListResult>>(
+    session,
+    WB_STOCK_CONTROL_TRANSFER_LIST_URL,
+    {
+      method: "POST",
+      body: buildWbJsonRpcBody({ nmIDs: uniqueNmIds }),
+    },
+  );
+  return unwrapWbJsonRpcResult(response);
+}
+
+async function fetchStockControlAvailableLimits(session: WbLkReadSession) {
+  const response = await fetchWbLkReadOnlyJson<WbJsonRpcResponse<WbStockControlAvailableLimitsResult>>(
+    session,
+    WB_STOCK_CONTROL_TRANSFER_LIMITS_URL,
+    {
+      method: "POST",
+      body: buildWbJsonRpcBody(),
+    },
+  );
+  return unwrapWbJsonRpcResult(response).data?.quotas ?? [];
+}
+
+async function submitStockControlTransferOrder(
+  session: WbLkReadSession,
+  item: RedistributionHttpSlotProbeItem,
+) {
+  if (!item.fromOfficeId || !item.toOfficeId || !item.chrtId || item.canSubmitUnits <= 0) {
+    throw new Error("stock_control_submit_payload_incomplete");
+  }
+
+  const response = await fetchWbLkReadOnlyJson<WbJsonRpcResponse<WbStockControlOrderResult>>(
+    session,
+    WB_STOCK_CONTROL_TRANSFER_ORDER_URL,
+    {
+      method: "POST",
+      body: buildWbJsonRpcBody({
+        transfers: [
+          {
+            nmID: item.nmId,
+            srcOfficeID: item.fromOfficeId,
+            items: [
+              {
+                dstOfficeID: item.toOfficeId,
+                chrtID: item.chrtId,
+                count: item.canSubmitUnits,
+              },
+            ],
+          },
+        ],
+      }),
+    },
+  );
+
+  return unwrapWbJsonRpcResult(response);
+}
+
+function stockControlTransfersToStocks(
+  transferList: WbStockControlTransferListResult,
+  quotas: WbStockControlQuota[],
+) {
+  const quotasByOffice = new Map(quotas.map((quota) => [Number(quota.officeID), quota]));
+  const stocksByNm = new Map<number, WbRedistributionStocksResponse>();
+
+  for (const transfer of transferList.transfers ?? []) {
+    const sourcesByOffice = new Map<number, WbRedistributionSourceWarehouse>();
+    const destinationIds = new Set<number>();
+
+    for (const chrt of transfer.chrts ?? []) {
+      const warehouseId = Number(chrt.warehouseID);
+      if (!Number.isFinite(warehouseId)) {
+        continue;
+      }
+
+      const source = sourcesByOffice.get(warehouseId) ?? {
+        officeID: warehouseId,
+        officeName: chrt.warehouseName,
+        inStock: [],
+      };
+      source.inStock.push({
+        techSize: chrt.sizeName,
+        chrtID: Number(chrt.chrtID),
+        count: toPositiveInt(chrt.count),
+        warehouseID: warehouseId,
+        warehouseName: chrt.warehouseName,
+        dstWarehouseIDs: (chrt.dstWarehouseIDs ?? [])
+          .map((officeId) => Number(officeId))
+          .filter((officeId) => Number.isFinite(officeId)),
+      });
+      sourcesByOffice.set(warehouseId, source);
+
+      for (const officeId of chrt.dstWarehouseIDs ?? []) {
+        const safeOfficeId = Number(officeId);
+        if (Number.isFinite(safeOfficeId)) {
+          destinationIds.add(safeOfficeId);
+        }
+      }
+    }
+
+    const dst = Array.from(destinationIds)
+      .map((officeId) => quotasByOffice.get(officeId))
+      .filter((quota): quota is WbStockControlQuota => Boolean(quota))
+      .map((quota) => ({
+        officeID: quota.officeID,
+        officeName: quota.officeName || quota.displayName || String(quota.officeID),
+      }));
+
+    stocksByNm.set(Number(transfer.nmID), {
+      data: {
+        src: Array.from(sourcesByOffice.values()),
+        dst,
+      },
+    });
+  }
+
+  return stocksByNm;
+}
+
+function matchStockControlDestinationWarehouse(input: {
+  quotas: WbStockControlQuota[];
+  size: WbRedistributionStockSize | null;
+  recommendation: ProbeInput;
+}) {
+  const allowedIds = new Set((input.size?.dstWarehouseIDs ?? []).map((officeId) => Number(officeId)));
+  if (!allowedIds.size) {
+    return null;
+  }
+
+  return input.quotas
+    .filter((quota) => allowedIds.has(Number(quota.officeID)))
+    .map((quota) => ({
+      officeID: quota.officeID,
+      officeName: quota.officeName || quota.displayName || String(quota.officeID),
+    }))
+    .find((warehouse) =>
+      wbWarehouseMatches(warehouse, {
+        officeId: input.recommendation.toOfficeId,
+        warehouseName: input.recommendation.toWarehouse,
+      }),
+    ) ?? null;
+}
+
+function buildStockControlQuotaReader(quotas: WbStockControlQuota[]) {
+  const quotasByOffice = new Map(quotas.map((quota) => [Number(quota.officeID), quota]));
+  return async (officeId: number | null, type: "src" | "dst") => {
+    if (officeId == null) {
+      return null;
+    }
+    const quota = quotasByOffice.get(Number(officeId));
+    if (!quota) {
+      return null;
+    }
+    return type === "src" ? quota.srcQuota : quota.dstQuota;
+  };
+}
+
 async function collectQuotaObservations(input: {
   tenantId: string;
   stocksByNm: Map<number, WbRedistributionStocksResponse>;
@@ -476,6 +709,7 @@ async function collectRouteMatrixObservations(input: {
   getQuota: (officeId: number | null, type: "src" | "dst") => Promise<number | null>;
   source: string;
   maxRoutes: number;
+  availableReason?: string;
 }) {
   const maxRoutes = Math.max(0, Math.floor(input.maxRoutes));
   const stats: RedistributionHttpSlotMatrixStats = {
@@ -567,7 +801,7 @@ async function collectRouteMatrixObservations(input: {
 
         const dstQuota = await readQuotaSafely(destinationWarehouse.officeID, "dst");
         let status: RedistributionHttpSlotStatus = "available";
-        let reason = "http_matrix_route_available";
+        let reason = input.availableReason ?? "http_matrix_route_available";
         const safeSrcQuota = srcQuota.quota == null ? null : toPositiveInt(srcQuota.quota);
         const safeDstQuota = dstQuota.quota == null ? null : toPositiveInt(dstQuota.quota);
 
@@ -648,6 +882,177 @@ async function collectRouteMatrixObservations(input: {
   return stats;
 }
 
+function isStockControlFallbackBlocked(error: unknown) {
+  const status = Number((error as { readOnlyHttpStatus?: unknown })?.readOnlyHttpStatus ?? 0);
+  if ([401, 403, 429].includes(status)) {
+    return true;
+  }
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return message.includes("http 401")
+    || message.includes("http 403")
+    || message.includes("http 429")
+    || message.includes("forbidden")
+    || message.includes("permission")
+    || message.includes("access denied")
+    || message.includes("too many requests");
+}
+
+async function probeStockControlSlotsHttp(input: {
+  tenantId: string;
+  recommendations: ProbeInput[];
+  limit: number;
+  persistAvailability?: boolean;
+  submitAvailable?: boolean;
+  monitorAllWarehouses?: boolean;
+  monitorAllDirections?: boolean;
+  matrixNmIds?: number[];
+  matrixRouteLimit?: number;
+  availabilitySource?: string;
+  quotaSource?: string;
+  matrixSource?: string;
+}, session: WbLkReadSession, checkedAt: Date) {
+  const recommendations = input.recommendations.slice(0, input.limit);
+  const matrixNmIds = Array.from(new Set((input.matrixNmIds ?? [])
+    .filter((nmId) => Number.isFinite(nmId) && nmId > 0)
+    .map((nmId) => Math.floor(nmId))));
+  const nmIdsToFetch = Array.from(new Set([
+    ...recommendations.map((recommendation) => recommendation.nmId),
+    ...matrixNmIds,
+  ]));
+  const [transferList, quotas] = await Promise.all([
+    fetchStockControlTransferList(session, nmIdsToFetch),
+    fetchStockControlAvailableLimits(session),
+  ]);
+  const stocksByNm = stockControlTransfersToStocks(transferList, quotas);
+  const getQuota = buildStockControlQuotaReader(quotas);
+  const items: RedistributionHttpSlotProbeItem[] = [];
+
+  for (const recommendation of recommendations) {
+    let probeItem: RedistributionHttpSlotProbeItem;
+    try {
+      const stocks = stocksByNm.get(recommendation.nmId) ?? {};
+      const sourceWarehouse = matchSourceWarehouse(stocks, recommendation);
+      const size = matchSize(sourceWarehouse, recommendation.sizeName);
+      const destinationWarehouse = matchStockControlDestinationWarehouse({
+        quotas,
+        size,
+        recommendation,
+      });
+      const srcQuota = await getQuota(sourceWarehouse?.officeID ?? recommendation.fromOfficeId ?? null, "src");
+      const dstQuota = await getQuota(destinationWarehouse?.officeID ?? recommendation.toOfficeId ?? null, "dst");
+
+      probeItem = {
+        ...buildSlotProbeItem({
+          recommendation,
+          sourceWarehouse,
+          destinationWarehouse,
+          size,
+          srcQuota,
+          dstQuota,
+        }),
+        contour: "stock_control",
+      };
+
+      if (probeItem.reason === "http_slot_available") {
+        probeItem = {
+          ...probeItem,
+          reason: "stock_control_slot_available",
+        };
+      }
+
+      if (input.submitAvailable && probeItem.status === "available" && probeItem.canSubmitUnits > 0) {
+        await submitStockControlTransferOrder(session, probeItem);
+        probeItem = {
+          ...probeItem,
+          submitted: true,
+          submittedUnits: probeItem.canSubmitUnits,
+          submitReason: "stock_control_order_submitted",
+        };
+      }
+    } catch (error) {
+      const transientItem = buildTransientProbeItem(recommendation, error);
+      probeItem = {
+        ...transientItem,
+        contour: "stock_control",
+        reason: input.submitAvailable
+          ? `stock_control_submit_or_probe_failed: ${transientItem.reason}`.slice(0, 2000)
+          : `stock_control_probe_failed: ${transientItem.reason}`.slice(0, 2000),
+      };
+    }
+    items.push(probeItem);
+
+    if (input.persistAvailability ?? true) {
+      await saveRouteAvailabilityResult({
+        tenantId: input.tenantId,
+        fromWarehouse: recommendation.fromWarehouse,
+        toWarehouse: recommendation.toWarehouse,
+        status: probeItem.status,
+        reason: probeItem.submitted ? "stock_control_order_submitted" : probeItem.reason,
+        source: input.availabilitySource ?? "stock_control_slot_probe",
+        metadata: {
+          contour: "stock_control",
+          nmId: probeItem.nmId,
+          itemId: probeItem.itemId ?? null,
+          runId: probeItem.runId ?? null,
+          sizeName: probeItem.sizeName,
+          fromOfficeId: probeItem.fromOfficeId,
+          toOfficeId: probeItem.toOfficeId,
+          chrtId: probeItem.chrtId,
+          inStockUnits: probeItem.inStockUnits,
+          srcQuota: probeItem.srcQuota,
+          dstQuota: probeItem.dstQuota,
+          canSubmitUnits: probeItem.canSubmitUnits,
+          submitted: probeItem.submitted,
+          submittedUnits: probeItem.submittedUnits,
+        },
+      });
+    }
+  }
+
+  if (input.monitorAllWarehouses) {
+    await collectQuotaObservations({
+      tenantId: input.tenantId,
+      stocksByNm,
+      getQuota,
+      source: input.quotaSource ?? "stock_control_quota_monitor",
+    }).catch(() => {});
+  }
+
+  const matrix = input.monitorAllDirections
+    ? await collectRouteMatrixObservations({
+      tenantId: input.tenantId,
+      stocksByNm,
+      getQuota,
+      source: input.matrixSource ?? "stock_control_slot_matrix_monitor",
+      maxRoutes: input.matrixRouteLimit ?? 250,
+      availableReason: "stock_control_matrix_route_available",
+    }).catch(() => null)
+    : null;
+
+  const openedSlots = items.filter((item) => item.status === "available" && item.canSubmitUnits > 0).length;
+  const submittedItems = items.filter((item) => item.submitted).length;
+  const matrixSuffix = matrix
+    ? ` Матрица WB stock-control: открыто ${matrix.openedRoutes}/${matrix.probedRoutes} направлений${matrix.capped ? " (срез ограничен)" : ""}.`
+    : "";
+  return {
+    tenantId: input.tenantId,
+    checkedAt: checkedAt.toISOString(),
+    ok: true,
+    message: `${items.length === 0 && matrix
+      ? "Stock-control проверка целевых маршрутов не запускалась."
+      : submittedItems > 0
+        ? `Stock-control создал заявки: ${submittedItems}/${items.length}.`
+        : openedSlots > 0
+          ? `Stock-control нашёл свободные слоты: ${openedSlots}/${items.length}.`
+          : `Stock-control проверка прошла: свободных слотов по проверенным маршрутам нет (${items.length}).`}${matrixSuffix}`,
+    probedItems: items.length,
+    openedSlots,
+    submittedItems,
+    items,
+    matrix,
+  } satisfies RedistributionHttpSlotProbeResult;
+}
+
 export async function probeRedistributionSlotsHttp(input: {
   tenantId: string;
   recommendations: ProbeInput[];
@@ -661,6 +1066,7 @@ export async function probeRedistributionSlotsHttp(input: {
   availabilitySource?: string;
   quotaSource?: string;
   matrixSource?: string;
+  contour?: "auto" | "stock_control" | "legacy_shifts";
 }) {
   const limit = clampLimit(input.limit);
   const recommendations = input.recommendations.slice(0, limit);
@@ -670,6 +1076,30 @@ export async function probeRedistributionSlotsHttp(input: {
   const checkedAt = new Date();
   const storageState = await loadTenantStorageState(input.tenantId);
   const session = await createWbLkReadSessionFromStorageState(storageState);
+  const contour = input.contour ?? "auto";
+  if (contour !== "legacy_shifts") {
+    try {
+      return await probeStockControlSlotsHttp({
+        tenantId: input.tenantId,
+        recommendations: input.recommendations,
+        limit,
+        persistAvailability: input.persistAvailability,
+        submitAvailable: input.submitAvailable,
+        monitorAllWarehouses: input.monitorAllWarehouses,
+        monitorAllDirections: input.monitorAllDirections,
+        matrixNmIds,
+        matrixRouteLimit: input.matrixRouteLimit,
+        availabilitySource: input.availabilitySource ?? "stock_control_slot_probe",
+        quotaSource: input.quotaSource ?? "stock_control_quota_monitor",
+        matrixSource: input.matrixSource ?? "stock_control_slot_matrix_monitor",
+      }, session, checkedAt);
+    } catch (error) {
+      if (contour === "stock_control" || isStockControlFallbackBlocked(error)) {
+        throw error;
+      }
+      // Legacy shifts remains a technical fallback only. Access/rate-limit errors stay on stock-control.
+    }
+  }
   const stocksByNm = new Map<number, WbRedistributionStocksResponse>();
   const stockFetchErrorsByNm = new Map<number, unknown>();
   const quotaByKey = new Map<string, number | null>();
@@ -721,6 +1151,10 @@ export async function probeRedistributionSlotsHttp(input: {
         srcQuota,
         dstQuota,
       });
+      probeItem = {
+        ...probeItem,
+        contour: "legacy_shifts",
+      };
 
       if (input.submitAvailable && probeItem.status === "available" && probeItem.canSubmitUnits > 0) {
         await submitRedistributionOrder(session, probeItem);
@@ -736,9 +1170,10 @@ export async function probeRedistributionSlotsHttp(input: {
       probeItem = input.submitAvailable
         ? {
           ...transientItem,
+          contour: "legacy_shifts",
           reason: `http_submit_or_probe_failed: ${transientItem.reason}`.slice(0, 2000),
         }
-        : transientItem;
+        : { ...transientItem, contour: "legacy_shifts" };
     }
     items.push(probeItem);
 
@@ -751,6 +1186,7 @@ export async function probeRedistributionSlotsHttp(input: {
         reason: probeItem.submitted ? "http_order_submitted" : probeItem.reason,
         source: input.availabilitySource ?? "http_slot_probe",
         metadata: {
+          contour: "legacy_shifts",
           nmId: probeItem.nmId,
           itemId: probeItem.itemId ?? null,
           runId: probeItem.runId ?? null,

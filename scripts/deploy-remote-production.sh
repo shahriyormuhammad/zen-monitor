@@ -27,7 +27,24 @@ git fetch "$REMOTE_NAME" "$BRANCH"
 git checkout "$BRANCH"
 git reset --hard "$REMOTE_NAME/$BRANCH"
 
-npm ci --no-audit --no-fund
+npm_ci_ok=false
+for attempt in 1 2 3; do
+  if npm ci --no-audit --no-fund; then
+    npm_ci_ok=true
+    break
+  fi
+
+  if [[ "$attempt" != "3" ]]; then
+    echo "[deploy] npm ci failed attempt=$attempt; cleaning node_modules and retrying"
+    rm -rf node_modules
+    sleep $((attempt * 5))
+  fi
+done
+
+if [[ "$npm_ci_ok" != true ]]; then
+  echo "[deploy] npm ci failed after retries" >&2
+  exit 1
+fi
 
 if [[ ! -x node_modules/.bin/next || ! -f node_modules/next/link.d.ts ]]; then
   echo "[deploy] incomplete dependency install: Next executable/types are missing" >&2
@@ -38,7 +55,19 @@ fi
 npm run build
 npm run db:migrate
 
+chmod 0755 ops/prepare-next-standalone.sh
+if [[ -d ops/systemd ]]; then
+  install -m 0644 ops/systemd/*.service ops/systemd/*.timer /etc/systemd/system/
+fi
+if [[ -f ops/network/enterprise-wb-network-hardening.sh ]]; then
+  install -m 0755 ops/network/enterprise-wb-network-hardening.sh /usr/local/sbin/enterprise-wb-network-hardening.sh
+fi
+
 systemctl daemon-reload
+systemctl enable --now \
+  enterprise-wb-analytics-supabase.service \
+  enterprise-wb-network-hardening.service \
+  enterprise-wb-analytics-watchdog.timer
 systemctl restart $SERVICES
 systemctl is-active $SERVICES
 

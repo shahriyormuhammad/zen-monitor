@@ -35,3 +35,20 @@ describe('resolveCellText cost fields', () => {
     expect(resolveCellText('cost_price_1', row, {} as RowSummary, manual)).toBe('—');
   });
 });
+
+
+describe('resolveCellText buyout auto', () => {
+  it('shows auto buyout only when it is the applied source', () => {
+    expect(resolveCellText('buyout_auto', {} as UnitTemplateRow, {
+      buyoutAutoPercent: 72.4,
+      buyoutSource: 'auto',
+    } as RowSummary, makeManual())).toBe('72.4%');
+  });
+
+  it('shows dash when WB fact exists but auto buyout is not applied', () => {
+    expect(resolveCellText('buyout_auto', {} as UnitTemplateRow, {
+      buyoutAutoPercent: 100,
+      buyoutSource: 'manual',
+    } as RowSummary, makeManual())).toBe('—');
+  });
+});

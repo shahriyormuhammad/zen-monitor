@@ -9,6 +9,7 @@ import { db, withTenantContext } from '@/lib/db';
 import { products, tenants, unitEconomicsConfigs, unitEconomicsManualInputs, wbTariffSnapshots as wbTariffSnapshotsTable, wbCategoryCommissionSnapshots as wbCategoryCommissionSnapshotsTable } from '@/lib/db/schema';
 import { resolveTaxRatePercent } from '@/lib/tax/regimes';
 import { decryptIfNeeded } from '@/lib/encryption';
+import { resolveCabinetEconomicsIndices } from '@/server/economics/cabinet-indices';
 import {
   wbApi,
   type WbAcceptanceTariffItem,
@@ -19,6 +20,9 @@ import {
   type WbReturnTariffItem,
   type WbWarehouseMeasurementItem,
 } from '@/lib/wb-api';
+import { MAX_WAREHOUSES } from '@/components/economics/constants';
+import { parseManualFieldsFromUnknown } from '@/components/economics/manual-fields-io';
+import { isDefaultWarehouseId, resolveWarehouseOptionId } from '@/components/economics/warehouse-options';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -75,6 +79,8 @@ type WbStockWarehouseSuggestion = {
 
 type TemplateScope = 'all' | 'costed';
 
+const DEFAULT_TOP_STOCK_WAREHOUSE_COUNT = 6;
+
 const WB_CARDS_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h — cards/photos/dimensions rarely change
 const wbCardsCache = new Map<string, { fetchedAt: number; cards: WbProductCard[] }>();
 const WB_ACCEPTANCE_TARIFFS_CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12h — tariffs change rarely
@@ -96,6 +102,49 @@ const wbMeasurementPenaltiesErrorCache = new Map<string, number>();
 function toNumber(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function withAutoStockWarehouses(
+  manualPayload: unknown,
+  suggestions: WbStockWarehouseSuggestion[],
+): Record<string, unknown> {
+  const manualFields = parseManualFieldsFromUnknown(manualPayload);
+  if (
+    manualFields.selectedWarehouses.length > 0
+    || manualFields.warehouseAutoSelectionDisabled
+    || suggestions.length === 0
+  ) {
+    return manualFields as unknown as Record<string, unknown>;
+  }
+
+  const selectedWarehouses: string[] = [];
+  const customWarehouses = [...manualFields.customWarehouses];
+  const customWarehouseIds = new Set(customWarehouses.map((warehouse) => warehouse.id));
+
+  for (const suggestion of suggestions.slice(0, DEFAULT_TOP_STOCK_WAREHOUSE_COUNT)) {
+    const label = suggestion.warehouseName.trim();
+    if (!label) continue;
+
+    const warehouseId = resolveWarehouseOptionId(label);
+    if (selectedWarehouses.includes(warehouseId)) continue;
+
+    selectedWarehouses.push(warehouseId);
+    if (!isDefaultWarehouseId(warehouseId) && !customWarehouseIds.has(warehouseId)) {
+      customWarehouses.push({ id: warehouseId, label });
+      customWarehouseIds.add(warehouseId);
+    }
+
+    if (selectedWarehouses.length >= MAX_WAREHOUSES) {
+      break;
+    }
+  }
+
+  return {
+    ...manualFields,
+    selectedWarehouses,
+    customWarehouses,
+    warehouseAutoSelectionDisabled: false,
+  } as unknown as Record<string, unknown>;
 }
 
 function parseSnapshotArray<T>(value: unknown, label: string): T[] {
@@ -825,6 +874,8 @@ async function getBuyoutFactsByNm(
 
   const fromIso = dateFrom.toISOString();
   const toExclusiveIso = new Date(dateTo.getTime() + 86_400_000).toISOString();
+  const lookbackFromIso = new Date(dateTo.getTime() - (89 * 86_400_000)).toISOString();
+  const factFromIso = new Date(Math.min(dateFrom.getTime(), new Date(lookbackFromIso).getTime())).toISOString();
   const nmIdSql = sql.join(uniqueNmIds.map((value) => sql`${value}`), sql`, `);
 
   const rows = await withTenantContext(db, tenantId, (tx) => tx.execute(sql`
@@ -838,7 +889,7 @@ async function getBuyoutFactsByNm(
         COUNT(*) FILTER (WHERE is_cancel = true)::numeric AS cancel_count
       FROM raw_api_orders
       WHERE tenant_id = ${tenantId}
-        AND date >= ${fromIso}::timestamp
+        AND date >= ${factFromIso}::timestamp
         AND date < ${toExclusiveIso}::timestamp
         AND nm_id IN (${nmIdSql})
       GROUP BY nm_id
@@ -850,7 +901,7 @@ async function getBuyoutFactsByNm(
         COUNT(*) FILTER (WHERE is_storno = true)::numeric AS return_count
       FROM raw_api_sales
       WHERE tenant_id = ${tenantId}
-        AND date >= ${fromIso}::timestamp
+        AND date >= ${factFromIso}::timestamp
         AND date < ${toExclusiveIso}::timestamp
         AND nm_id IN (${nmIdSql})
       GROUP BY nm_id
@@ -872,8 +923,29 @@ async function getBuyoutFactsByNm(
       FROM raw_api_funnel_stats
       WHERE tenant_id = ${tenantId}
         AND period_start::date = period_end::date
-        AND period_start >= ${fromIso}::timestamp
+        AND period_start >= ${factFromIso}::timestamp
         AND period_start < ${toExclusiveIso}::timestamp
+        AND nm_id IN (${nmIdSql})
+      GROUP BY nm_id
+    ),
+    lk_funnel_stats AS (
+      SELECT
+        nm_id,
+        SUM(order_count)::numeric AS order_count,
+        SUM(buyout_count)::numeric AS buyout_count,
+        SUM(cancel_count)::numeric AS cancel_count,
+        CASE
+          WHEN (SUM(buyout_count) + SUM(cancel_count)) > 0
+            THEN (
+              SUM(buyout_count)::numeric
+              / NULLIF((SUM(buyout_count) + SUM(cancel_count))::numeric, 0)
+            ) * 100
+          ELSE NULL
+        END::numeric AS buyout_percent
+      FROM raw_api_sales_funnel_nm_daily
+      WHERE tenant_id = ${tenantId}
+        AND date >= ${factFromIso}::timestamp
+        AND date < ${toExclusiveIso}::timestamp
         AND nm_id IN (${nmIdSql})
       GROUP BY nm_id
     ),
@@ -889,6 +961,18 @@ async function getBuyoutFactsByNm(
       WHERE tenant_id = ${tenantId}
         AND date < ${toExclusiveIso}::timestamp
         AND nm_id IN (${nmIdSql})
+      UNION ALL
+      SELECT nm_id, period_start AS activity_at
+      FROM raw_api_funnel_stats
+      WHERE tenant_id = ${tenantId}
+        AND period_start < ${toExclusiveIso}::timestamp
+        AND nm_id IN (${nmIdSql})
+      UNION ALL
+      SELECT nm_id, date AS activity_at
+      FROM raw_api_sales_funnel_nm_daily
+      WHERE tenant_id = ${tenantId}
+        AND date < ${toExclusiveIso}::timestamp
+        AND nm_id IN (${nmIdSql})
     ),
     activity_stats AS (
       SELECT
@@ -900,13 +984,27 @@ async function getBuyoutFactsByNm(
     )
     SELECT
       p.nm_id AS "nmId",
-      COALESCE(f.order_count, o.order_count, 0)::numeric AS "orderCount",
-      COALESCE(f.buyout_count, s.buyout_count, 0)::numeric AS "buyoutCount",
-      COALESCE(f.cancel_count, o.cancel_count, 0)::numeric AS "cancelCount",
+      CASE
+        WHEN f.buyout_percent IS NOT NULL THEN COALESCE(f.order_count, 0)
+        WHEN lk.buyout_percent IS NOT NULL THEN COALESCE(lk.order_count, 0)
+        ELSE COALESCE(o.order_count, 0)
+      END::numeric AS "orderCount",
+      CASE
+        WHEN f.buyout_percent IS NOT NULL THEN COALESCE(f.buyout_count, 0)
+        WHEN lk.buyout_percent IS NOT NULL THEN COALESCE(lk.buyout_count, 0)
+        ELSE COALESCE(s.buyout_count, 0)
+      END::numeric AS "buyoutCount",
+      CASE
+        WHEN f.buyout_percent IS NOT NULL THEN COALESCE(f.cancel_count, 0)
+        WHEN lk.buyout_percent IS NOT NULL THEN COALESCE(lk.cancel_count, 0)
+        ELSE COALESCE(o.cancel_count, 0)
+      END::numeric AS "cancelCount",
       COALESCE(s.return_count, 0)::numeric AS "returnCount",
       CASE
         WHEN f.buyout_percent IS NOT NULL
           THEN f.buyout_percent
+        WHEN lk.buyout_percent IS NOT NULL
+          THEN lk.buyout_percent
         WHEN (COALESCE(s.buyout_count, 0) + COALESCE(o.cancel_count, 0) + COALESCE(s.return_count, 0)) > 0
           THEN (
             COALESCE(s.buyout_count, 0)
@@ -926,6 +1024,7 @@ async function getBuyoutFactsByNm(
     LEFT JOIN order_stats o ON o.nm_id = p.nm_id
     LEFT JOIN sales_stats s ON s.nm_id = p.nm_id
     LEFT JOIN funnel_stats f ON f.nm_id = p.nm_id
+    LEFT JOIN lk_funnel_stats lk ON lk.nm_id = p.nm_id
     LEFT JOIN activity_stats a ON a.nm_id = p.nm_id
   `)) as BuyoutFactRow[];
 
@@ -1578,7 +1677,7 @@ export const GET = apiRoute(async (request: Request) => {
       .map((row) => toNumber(row.nmId))
       .filter((value) => Number.isFinite(value) && value > 0);
 
-    const [manualInputRows, buyoutFactsByNm, localizationByNm, wbWarehouseVolumeByNm, wbStockWarehousesByNm] = await Promise.all([
+    const [manualInputRows, buyoutFactsByNm, localizationByNm, wbWarehouseVolumeByNm, wbStockWarehousesByNm, cabinetIndices] = await Promise.all([
       nmIds.length > 0
         ? withTenantContext(db, tenantId, (tx) =>
             tx
@@ -1611,15 +1710,27 @@ export const GET = apiRoute(async (request: Request) => {
         tenantId,
         nmIds,
       ),
+      resolveCabinetEconomicsIndices(tenantId, parsedDateTo),
     ]);
 
-    const manualInputsByNm: Record<string, Record<string, unknown>> = {};
+    const rawManualInputsByNm = new Map<number, unknown>();
     for (const row of manualInputRows) {
       const nmId = Number(row.nmId);
       if (!Number.isFinite(nmId) || nmId <= 0) {
         continue;
       }
-      manualInputsByNm[String(nmId)] = row.manualFields as Record<string, unknown>;
+      rawManualInputsByNm.set(nmId, row.manualFields);
+    }
+
+    const manualInputsByNm: Record<string, Record<string, unknown>> = {};
+    for (const nmId of nmIds) {
+      const rawPayload = rawManualInputsByNm.get(nmId);
+      const stockSuggestions = wbStockWarehousesByNm.get(nmId) ?? [];
+      if (templateScope === 'costed' && stockSuggestions.length > 0) {
+        manualInputsByNm[String(nmId)] = withAutoStockWarehouses(rawPayload, stockSuggestions);
+      } else if (rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload)) {
+        manualInputsByNm[String(nmId)] = rawPayload as Record<string, unknown>;
+      }
     }
 
     const enrichedRows = await Promise.all(rowsForTemplate.map(async (row) => {
@@ -1677,11 +1788,17 @@ export const GET = apiRoute(async (request: Request) => {
         buyoutFirstActivityDateFact: buyoutFact?.firstActivityDate ?? null,
         buyoutLastActivityDateFact: buyoutFact?.lastActivityDate ?? null,
         localizationPercent: localizationByNm.get(nmId) ?? null,
+        cabinetLocalityIndex: cabinetIndices.localityIndex,
+        cabinetIrpPercent: cabinetIndices.irpPercent,
+        cabinetIndicesSource: cabinetIndices.source,
+        cabinetIndicesEffectiveWeek: cabinetIndices.effectiveWeek,
+        cabinetIndicesFetchedAt: cabinetIndices.fetchedAt,
       };
     }));
 
     return NextResponse.json({
       data: enrichedRows,
+      cabinetIndices,
       manualInputsByNm,
       calculationMode: 'PLAN_TEMPLATE',
       defaultTaxPercent,

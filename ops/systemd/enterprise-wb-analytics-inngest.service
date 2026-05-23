@@ -2,7 +2,6 @@
 Description=Enterprise WB Analytics Inngest Runtime
 After=network.target enterprise-wb-analytics-sync-worker.service enterprise-wb-analytics-redistribution-worker.service enterprise-wb-analytics-advertising-worker.service enterprise-wb-analytics-reviews-worker.service enterprise-wb-analytics-ops-worker.service
 Wants=enterprise-wb-analytics-sync-worker.service enterprise-wb-analytics-redistribution-worker.service enterprise-wb-analytics-advertising-worker.service enterprise-wb-analytics-reviews-worker.service enterprise-wb-analytics-ops-worker.service
-Requires=enterprise-wb-analytics-sync-worker.service enterprise-wb-analytics-redistribution-worker.service enterprise-wb-analytics-advertising-worker.service enterprise-wb-analytics-reviews-worker.service enterprise-wb-analytics-ops-worker.service
 
 [Service]
 Type=simple

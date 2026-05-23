@@ -37,7 +37,8 @@
     "load:browser": "node scripts/load/browser-load.mjs",
     "load:tabs": "node scripts/load/tab-waterfall.mjs",
     "load:watch": "node scripts/load/server-watch.mjs",
-    "knowledge:health": "node scripts/knowledge-health.mjs"
+    "knowledge:health": "node scripts/knowledge-health.mjs",
+    "deploy:production:local": "bash ops/deploy-production-local.sh"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.49.0",

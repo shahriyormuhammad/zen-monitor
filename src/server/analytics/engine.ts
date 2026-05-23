@@ -1251,8 +1251,8 @@ export class AnalyticsEngine {
         SELECT
           h.nm_id,
           CASE
-            WHEN h.closed_qty >= 10
-              AND h.history_days >= 14
+            WHEN h.closed_qty >= 100
+              AND h.history_days >= 30
               AND COALESCE((h.order_qty - h.closed_qty) / NULLIF(h.order_qty, 0), 0) <= 0.4
             THEN (h.buyout_qty / NULLIF(h.closed_qty, 0)) * 100
             ELSE NULL
