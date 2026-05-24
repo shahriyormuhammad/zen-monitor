@@ -26,7 +26,8 @@ const ORANGE = '#f97316';
 const AMBER = '#f59e0b';
 const RED = '#ef4444';
 
-const TICK_STYLE: React.CSSProperties = { fontSize: 10, fill: '#64748b' };
+/** Reused tick style for all chart axes. Plain object to satisfy recharts SVG props. */
+const tickProps: { fontSize: number; fill: string } = { fontSize: 10, fill: '#64748b' };
 
 function chartData(rows: WeeklyRow[]) {
   return rows.map((r) => ({
@@ -49,8 +50,8 @@ export function OrdersChart({ rows, height = 180 }: { rows: WeeklyRow[]; height?
     <ResponsiveContainer width="100%" height={height}>
       <AreaChart data={chartData(rows)} margin={{ top: 6, right: 10, left: -16, bottom: 0 }}>
         <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-        <XAxis dataKey="week" tick={TICK_STYLE} interval={5} />
-        <YAxis tick={TICK_STYLE} width={36} />
+        <XAxis dataKey="week" tick={tickProps} interval={5} />
+        <YAxis tick={tickProps} width={36} />
         <Tooltip cursor={{ stroke: EMERALD }} />
         <Area type="monotone" dataKey="plan" name="План" stroke={EMERALD} fill={EMERALD} fillOpacity={0.18} strokeWidth={2} />
         <Line type="monotone" dataKey="fact" name="Факт" stroke={SLATE} strokeWidth={1.6} strokeDasharray="4 3" dot={false} />
@@ -67,8 +68,8 @@ export function StockChart({ rows, height = 180 }: { rows: WeeklyRow[]; height?:
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={chartData(rows)} margin={{ top: 6, right: 10, left: -16, bottom: 0 }}>
         <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-        <XAxis dataKey="week" tick={TICK_STYLE} interval={5} />
-        <YAxis tick={TICK_STYLE} width={36} />
+        <XAxis dataKey="week" tick={tickProps} interval={5} />
+        <YAxis tick={tickProps} width={36} />
         <Tooltip />
         <Bar dataKey="stock" name="Остаток" radius={[3, 3, 0, 0]}>
           {chartData(rows).map((d, i) => {
@@ -90,8 +91,8 @@ export function ProfitChart({ rows, height = 180 }: { rows: WeeklyRow[]; height?
     <ResponsiveContainer width="100%" height={height}>
       <ComposedChart data={chartData(rows)} margin={{ top: 6, right: 10, left: -16, bottom: 0 }}>
         <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-        <XAxis dataKey="week" tick={TICK_STYLE} interval={5} />
-        <YAxis tick={TICK_STYLE} width={48} tickFormatter={(v) => Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}K` : `${v}`} />
+        <XAxis dataKey="week" tick={tickProps} interval={5} />
+        <YAxis tick={tickProps} width={48} tickFormatter={(v) => Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}K` : `${v}`} />
         <Tooltip />
         <Area type="monotone" dataKey="cumProfit" name="Прибыль накоп." stroke={EMERALD} fill={EMERALD} fillOpacity={0.14} strokeWidth={2} />
         <Line type="monotone" dataKey="cumCash" name="Кассовая" stroke={SLATE} strokeWidth={1.6} strokeDasharray="4 3" dot={false} />
@@ -110,8 +111,8 @@ export function DRRChart({
     <ResponsiveContainer width="100%" height={height}>
       <LineChart data={chartData(rows)} margin={{ top: 6, right: 10, left: -16, bottom: 0 }}>
         <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-        <XAxis dataKey="week" tick={TICK_STYLE} interval={5} />
-        <YAxis tick={TICK_STYLE} width={36} domain={[0, 20]} />
+        <XAxis dataKey="week" tick={tickProps} interval={5} />
+        <YAxis tick={tickProps} width={36} domain={[0, 20]} />
         <Tooltip />
         <ReferenceLine y={target} stroke={EMERALD} strokeDasharray="4 3" label={{ value: 'Цель', position: 'insideRight', fontSize: 10, fill: EMERALD }} />
         <ReferenceLine y={limit} stroke={RED} strokeDasharray="4 3" label={{ value: 'Предел', position: 'insideRight', fontSize: 10, fill: RED }} />
@@ -128,8 +129,8 @@ export function SeasonalityChart({ rows, height = 180 }: { rows: WeeklyRow[]; he
     <ResponsiveContainer width="100%" height={height}>
       <AreaChart data={chartData(rows)} margin={{ top: 6, right: 10, left: -16, bottom: 0 }}>
         <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
-        <XAxis dataKey="week" tick={TICK_STYLE} interval={5} />
-        <YAxis tick={TICK_STYLE} width={36} domain={[0, 170]} tickFormatter={(v) => `${v}%`} />
+        <XAxis dataKey="week" tick={tickProps} interval={5} />
+        <YAxis tick={tickProps} width={36} domain={[0, 170]} tickFormatter={(v) => `${v}%`} />
         <Tooltip formatter={(value: number) => `${value.toFixed(0)}%`} />
         <Area type="monotone" dataKey="season" name="Коэф сезона" stroke={CYAN} fill={CYAN} fillOpacity={0.16} strokeWidth={2} />
       </AreaChart>
