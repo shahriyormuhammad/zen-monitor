@@ -29,16 +29,16 @@ export async function listSalesPlanArticles(tenantId: string): Promise<SalesPlan
     // We tolerate the absence of raw_api_* data — values just come back as zero.
     const result = await tx.execute(sql`
       WITH stock_agg AS (
-        SELECT nm_id, COALESCE(SUM(quantity), 0)::numeric AS qty
+        SELECT nm_id, COALESCE(SUM(amount), 0)::numeric AS qty
         FROM raw_api_stocks
         WHERE tenant_id = ${tenantId}
-          AND last_change_date >= NOW() - INTERVAL '7 days'
+          AND date >= NOW() - INTERVAL '7 days'
         GROUP BY nm_id
       ),
       order_agg AS (
         SELECT nm_id,
                COUNT(*)::numeric                          AS cnt,
-               COALESCE(SUM(price_with_disc), 0)::numeric AS rev
+               COALESCE(SUM(total_price), 0)::numeric AS rev
         FROM raw_api_orders
         WHERE tenant_id = ${tenantId}
           AND date >= NOW() - INTERVAL '28 days'
