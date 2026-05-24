@@ -147,12 +147,12 @@ const HEAD_FACT = 'sticky top-0 z-10 border border-border bg-amber-50 px-2 py-1.
 const CELL = 'border border-border px-2 py-1 text-right whitespace-nowrap';
 const CELL_FACT = 'border border-border bg-amber-50/50 px-2 py-1 text-right whitespace-nowrap dark:bg-amber-900/15';
 
-// Vertical divider between column groups — thick black left border so the
-// reader instantly sees where one group ends and the next begins.
-// Using black/white directly (not theme var) because Tailwind doesn't emit
-// border-l-<custom-color> variants by default and the divider was rendering
-// in the muted border colour.
-const SEP = 'border-l-2 border-l-slate-900 dark:border-l-slate-100';
+// Vertical divider between column groups — inset box-shadow paints a thick
+// black line on the LEFT side of the first cell of each group. We use
+// box-shadow instead of border-left because `border-collapse: collapse`
+// merges adjacent cell borders and the surrounding 1px border-border was
+// winning the colour merge.
+const SEP = 'shadow-[inset_2px_0_0_0_#0f172a] dark:shadow-[inset_2px_0_0_0_#e2e8f0]';
 
 export function WeeklyPlanTable({ rows, highlightToday = true }: Props) {
   const phases: SeasonKind[] = useMemo(
