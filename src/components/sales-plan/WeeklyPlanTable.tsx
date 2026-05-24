@@ -149,7 +149,10 @@ const CELL_FACT = 'border border-border bg-amber-50/50 px-2 py-1 text-right whit
 
 // Vertical divider between column groups — thick black left border so the
 // reader instantly sees where one group ends and the next begins.
-const SEP = 'border-l-[2px] border-l-foreground dark:border-l-foreground';
+// Using black/white directly (not theme var) because Tailwind doesn't emit
+// border-l-<custom-color> variants by default and the divider was rendering
+// in the muted border colour.
+const SEP = 'border-l-2 border-l-slate-900 dark:border-l-slate-100';
 
 export function WeeklyPlanTable({ rows, highlightToday = true }: Props) {
   const phases: SeasonKind[] = useMemo(
