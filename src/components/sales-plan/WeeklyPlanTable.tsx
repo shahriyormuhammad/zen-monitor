@@ -147,6 +147,10 @@ const HEAD_FACT = 'sticky top-0 z-10 border border-border bg-amber-50 px-2 py-1.
 const CELL = 'border border-border px-2 py-1 text-right whitespace-nowrap';
 const CELL_FACT = 'border border-border bg-amber-50/50 px-2 py-1 text-right whitespace-nowrap dark:bg-amber-900/15';
 
+// Vertical divider between column groups — thicker, darker left border so the
+// reader instantly sees where one group ends and the next begins.
+const SEP = 'border-l-[2px] border-l-slate-400 dark:border-l-slate-500';
+
 export function WeeklyPlanTable({ rows, highlightToday = true }: Props) {
   const phases: SeasonKind[] = useMemo(
     () => rows.map((_, i) => classifySeasonPhase(rows.map((r) => r.seasonCoef), i)),
@@ -181,46 +185,46 @@ export function WeeklyPlanTable({ rows, highlightToday = true }: Props) {
 
           {/* Sub-columns */}
           <tr>
-            <th className={HEAD_TH}>Коэф<br/>расчёт</th>
+            <th className={`${HEAD_TH} ${SEP}`}>Коэф<br/>расчёт</th>
             <th className={HEAD_TH}>Скор.<br/>зак. 7Д</th>
             <th className={HEAD_TH}>Коэф<br/>цен</th>
             <th className={HEAD_TH}>Спрос<br/>/предл</th>
             <th className={HEAD_TH}>Итого</th>
 
-            <th className={HEAD_TH}>Цена СПП<br/>план</th>
+            <th className={`${HEAD_TH} ${SEP}`}>Цена СПП<br/>план</th>
             <th className={HEAD_FACT}>Цена СПП<br/>факт</th>
             <th className={HEAD_TH}>СПП<br/>план</th>
             <th className={HEAD_FACT}>СПП<br/>факт</th>
             <th className={HEAD_TH}>До СПП<br/>план</th>
             <th className={HEAD_FACT}>До СПП<br/>факт</th>
 
-            <th className={HEAD_TH}>Маржа<br/>план</th>
+            <th className={`${HEAD_TH} ${SEP}`}>Маржа<br/>план</th>
             <th className={HEAD_FACT}>Маржа<br/>факт</th>
             <th className={HEAD_TH}>Раскр.</th>
 
-            <th className={HEAD_TH}>Заказы<br/>план</th>
+            <th className={`${HEAD_TH} ${SEP}`}>Заказы<br/>план</th>
             <th className={HEAD_FACT}>Заказы<br/>факт</th>
             <th className={HEAD_TH}>Δ %</th>
 
-            <th className={HEAD_TH}>% выкуп<br/>план</th>
+            <th className={`${HEAD_TH} ${SEP}`}>% выкуп<br/>план</th>
             <th className={HEAD_FACT}>% выкуп<br/>факт</th>
             <th className={HEAD_TH}>Шт</th>
 
-            <th className={HEAD_TH}>Остаток<br/>план</th>
+            <th className={`${HEAD_TH} ${SEP}`}>Остаток<br/>план</th>
             <th className={HEAD_FACT}>Остаток<br/>факт</th>
             <th className={HEAD_TH}>Об-ть<br/>дн</th>
 
-            <th className={HEAD_TH}>Ручная<br/>поставка</th>
+            <th className={`${HEAD_TH} ${SEP}`}>Ручная<br/>поставка</th>
             <th className={HEAD_TH}>Сумма<br/>₽</th>
             <th className={HEAD_TH}>Инвест.</th>
 
-            <th className={HEAD_TH}>% ДРР<br/>план</th>
+            <th className={`${HEAD_TH} ${SEP}`}>% ДРР<br/>план</th>
             <th className={HEAD_FACT}>% ДРР<br/>факт</th>
             <th className={HEAD_TH}>ДРР ₽</th>
             <th className={HEAD_TH}>Внешн.</th>
             <th className={HEAD_TH}>Общий</th>
 
-            <th className={HEAD_TH}>Маржа<br/>с ДРР</th>
+            <th className={`${HEAD_TH} ${SEP}`}>Маржа<br/>с ДРР</th>
             <th className={HEAD_TH}>К пере-<br/>числ.</th>
             <th className={HEAD_TH}>Налог %</th>
             <th className={HEAD_TH}>Налог</th>
@@ -255,14 +259,14 @@ export function WeeklyPlanTable({ rows, highlightToday = true }: Props) {
                 </td>
 
                 {/* Сезонность */}
-                <td className={CELL}>{(r.seasonCoef * 100).toFixed(0)}%</td>
+                <td className={`${CELL} ${SEP}`}>{(r.seasonCoef * 100).toFixed(0)}%</td>
                 <td className={CELL}>{fmtNum(r.compRate7d)}</td>
                 <td className={CELL}>{(r.coefSeasonPrice * 100).toFixed(0)}%</td>
                 <td className={CELL}>{(r.coefDemandSupply * 100).toFixed(0)}%</td>
                 <td className={CELL}>{(r.coefFinal * 100).toFixed(0)}%</td>
 
                 {/* Цена */}
-                <td className={CELL}>{Math.round(r.pricePlan)} ₽</td>
+                <td className={`${CELL} ${SEP}`}>{Math.round(r.pricePlan)} ₽</td>
                 <td className={CELL_FACT}>{r.priceFact != null ? `${Math.round(r.priceFact)} ₽` : '—'}</td>
                 <td className={CELL}>{r.sppPlan.toFixed(1)}%</td>
                 <td className={CELL_FACT}>{r.sppFact != null ? `${r.sppFact.toFixed(1)}%` : '—'}</td>
@@ -270,41 +274,41 @@ export function WeeklyPlanTable({ rows, highlightToday = true }: Props) {
                 <td className={CELL_FACT}>{r.priceBeforeSppFact != null ? `${Math.round(r.priceBeforeSppFact)} ₽` : '—'}</td>
 
                 {/* Маржа */}
-                <td className={CELL}>{(r.marginPlan * 100).toFixed(1)}%</td>
+                <td className={`${CELL} ${SEP}`}>{(r.marginPlan * 100).toFixed(1)}%</td>
                 <td className={CELL_FACT}>{r.marginFact != null ? `${(r.marginFact * 100).toFixed(1)}%` : '—'}</td>
                 <td className={CELL}>{(r.ramp * 100).toFixed(0)}%</td>
 
                 {/* Заказы */}
-                <td className={CELL}>{fmtNum(r.planOrders)}</td>
+                <td className={`${CELL} ${SEP}`}>{fmtNum(r.planOrders)}</td>
                 <td className={CELL_FACT}>{fmtNum(r.factOrders)}</td>
                 <td className={CELL} style={deltaCellStyle(r.planOrders, r.factOrders)}>
                   {deltaPercent(r.planOrders, r.factOrders)}
                 </td>
 
                 {/* Выкупы */}
-                <td className={CELL}>{r.buyoutPlan.toFixed(0)}%</td>
+                <td className={`${CELL} ${SEP}`}>{r.buyoutPlan.toFixed(0)}%</td>
                 <td className={CELL_FACT}>{r.buyoutFact != null ? `${r.buyoutFact.toFixed(0)}%` : '—'}</td>
                 <td className={CELL}>{fmtNum(r.buyoutShtFact ?? r.buyoutShtPlan)}</td>
 
                 {/* Остатки */}
-                <td className={CELL}>{fmtNum(r.stockPlan)}</td>
+                <td className={`${CELL} ${SEP}`}>{fmtNum(r.stockPlan)}</td>
                 <td className={CELL_FACT}>{fmtNum(r.stockFact)}</td>
                 <td className={CELL}>{r.stockDays != null ? r.stockDays : '—'}</td>
 
                 {/* Поставка */}
-                <td className={CELL}>{fmtNum(r.supplies)}</td>
+                <td className={`${CELL} ${SEP}`}>{fmtNum(r.supplies)}</td>
                 <td className={CELL}>{fmtMoneyCompact(r.supplyRub)}</td>
                 <td className={CELL}>{fmtMoneyCompact(r.investments)}</td>
 
                 {/* ДРР */}
-                <td className={CELL}>{r.drrPlan.toFixed(1)}%</td>
+                <td className={`${CELL} ${SEP}`}>{r.drrPlan.toFixed(1)}%</td>
                 <td className={CELL_FACT}>{r.drrFact != null ? `${r.drrFact.toFixed(1)}%` : '—'}</td>
                 <td className={CELL}>{fmtMoneyCompact(r.adCost)}</td>
                 <td className={CELL}>{fmtMoneyCompact(r.externalCosts)}</td>
                 <td className={CELL}>{r.drrTotalPct.toFixed(1)}%</td>
 
                 {/* Финал */}
-                <td className={CELL}>{(r.marginAfterDrrPct * 100).toFixed(1)}%</td>
+                <td className={`${CELL} ${SEP}`}>{(r.marginAfterDrrPct * 100).toFixed(1)}%</td>
                 <td className={CELL}>{fmtMoneyCompact(r.toTransfer)}</td>
                 <td className={CELL}>{r.taxPct.toFixed(1)}%</td>
                 <td className={CELL}>{fmtMoneyCompact(r.taxRub)}</td>
