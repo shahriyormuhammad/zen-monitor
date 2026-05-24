@@ -10,6 +10,12 @@ import {
   getSalesPlanWorkspace,
   type CreateSimpleSalesPlanInput,
 } from '@/server/sales-plan/service';
+import { listSalesPlanArticles } from '@/server/sales-plan/articles';
+
+export async function listSalesPlanArticlesAction(tenantId: string) {
+  await requireTenantFeatureAccess(tenantId, 'salesPlan');
+  return listSalesPlanArticles(tenantId);
+}
 
 export async function loadSalesPlanWorkspaceAction(tenantId: string) {
   await requireTenantFeatureAccess(tenantId, 'salesPlan');

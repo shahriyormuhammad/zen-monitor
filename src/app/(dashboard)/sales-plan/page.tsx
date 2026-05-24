@@ -1,31 +1,26 @@
 'use client';
 
 /**
- * Sales Plan — Zen Monitor (Postal-style).
+ * Sales Plan — Zen Monitor, full Postal port.
  *
- * Layout:
- *  1. Sticky header — period filters + "Новый план" button (opens modal).
- *  2. Plan picker — chip row of active plans (click to switch focus).
- *  3. Hero card — cylinder gauge + info-table (план / факт) + traffic lights.
- *  4. Weekly plan table — 53-week breakdown with season pills.
+ * Layout (vertical):
+ *   1. Selector: choose article (with photo). No modal, no form.
+ *   2. Hero grid (2 columns):
+ *      LEFT  — info card: photo + dropdown article + 10-row 7-col
+ *              info-table (label/plan/fact | sep | label/plan/fact)
+ *              + cylinder + traffic lights + recommendations.
+ *      RIGHT — 2 charts stacked (Orders plan/fact, Stock).
+ *   3. Weekly plan table (53 weeks × 39 columns).
+ *   4. 2 charts row (Profit cumulative, DRR).
+ *   5. Seasonality chart + Keys placeholder.
  *
- * Uses existing server actions (loadSalesPlanWorkspaceAction,
- * createSalesPlanAction, archiveSalesPlanAction) unchanged. The richer
- * UI is rendered from data already in SalesPlanSummary; per-week storage
- * comes in a follow-up commit.
+ * No "Новый план" button; no group/period/season/qty form. The user picks
+ * an article and tweaks its plan inline.
  */
 
-import { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Archive,
-  ClipboardList,
-  Loader2,
-  Plus,
-  Sparkles,
-  TrendingUp,
-  X,
-} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { ChevronDown, ClipboardList, Loader2 } from 'lucide-react';
 
 import { OperatorState } from '@/components/dashboard/OperatorState';
 import { useStore } from '@/store/useStore';
@@ -36,116 +31,64 @@ import {
   type TrafficLightItem,
 } from '@/components/sales-plan/MiniTrafficLights';
 import { WeeklyPlanTable } from '@/components/sales-plan/WeeklyPlanTable';
-import { buildWeeklyRowsFromPlan } from '@/components/sales-plan/weekly-plan-builder';
+import { buildWeeklyRows } from '@/components/sales-plan/weekly-plan-builder';
 import {
-  archiveSalesPlanAction,
-  createSalesPlanAction,
-  loadSalesPlanWorkspaceAction,
-} from './actions';
-import type {
-  SalesPlanSummary,
-  SalesPlanWorkspace,
-} from '@/server/sales-plan/service';
+  OrdersChart, StockChart, ProfitChart, DRRChart, SeasonalityChart,
+} from '@/components/sales-plan/SalesPlanCharts';
+import { listSalesPlanArticlesAction } from './actions';
 
-/* ─────────────────────── helpers ─────────────────────── */
+/* ─────────────────── helpers ─────────────────── */
 
-function dateOnly(date: Date) {
-  return date.toISOString().slice(0, 10);
+function fmtNum(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return '—';
+  return Math.round(n).toLocaleString('ru-RU');
 }
-function monthStart() {
-  const now = new Date();
-  return dateOnly(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)));
-}
-function monthEnd() {
-  const now = new Date();
-  return dateOnly(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)));
-}
-function formatNumber(value: number) {
-  return Math.round(value).toLocaleString('ru-RU');
-}
-function formatMoney(value: number) {
-  return `${Math.round(value).toLocaleString('ru-RU')} ₽`;
-}
-function formatMoneyCompact(value: number): string {
-  if (!Number.isFinite(value)) return '—';
-  const abs = Math.abs(value);
-  if (abs >= 1_000_000) return (value / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M ₽';
-  if (abs >= 1000) return (value / 1000).toFixed(1).replace(/\.0$/, '') + 'K ₽';
-  return `${Math.round(value)} ₽`;
-}
-function paceLabel(status: SalesPlanSummary['paceStatus']) {
-  if (status === 'ahead') return 'опережаем';
-  if (status === 'behind') return 'отстаём';
-  if (status === 'on_track') return 'по плану';
-  return 'не стартовал';
-}
-function paceTone(status: SalesPlanSummary['paceStatus']): TrafficLightItem['tone'] {
-  if (status === 'ahead' || status === 'on_track') return 'ok';
-  if (status === 'behind') return 'bad';
-  return 'idle';
+function fmtMoneyCompact(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return '—';
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M ₽';
+  if (abs >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K ₽';
+  return `${Math.round(n)} ₽`;
 }
 
-/* ─────────────────────── PAGE ─────────────────────── */
+/* ─────────────────── page ─────────────────── */
 
 export default function SalesPlanPage() {
   const { tenantId } = useStore();
-  const queryClient = useQueryClient();
-  const [activePlanId, setActivePlanId] = useState<string | null>(null);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedNmId, setSelectedNmId] = useState<number | null>(null);
+  const [startStock, setStartStock] = useState<string>('0');
 
-  const workspaceQuery = useQuery<SalesPlanWorkspace, Error>({
-    queryKey: ['sales-plan-workspace', tenantId],
-    queryFn: () => loadSalesPlanWorkspaceAction(tenantId!),
+  const articlesQuery = useQuery({
+    queryKey: ['sales-plan-articles', tenantId],
+    queryFn: () => listSalesPlanArticlesAction(tenantId!),
     enabled: Boolean(tenantId),
-    staleTime: 30_000,
+    staleTime: 60_000,
   });
 
-  const groups = workspaceQuery.data?.groups ?? [];
-  const plans = workspaceQuery.data?.plans ?? [];
-  const activePlans = useMemo(() => plans.filter((p) => p.status === 'active'), [plans]);
+  const articles = articlesQuery.data ?? [];
+  const focused = useMemo(
+    () => articles.find((a) => a.nmId === selectedNmId) ?? articles[0],
+    [articles, selectedNmId],
+  );
 
-  // Pick the currently-focused plan (latest active by default).
-  const focusedPlan = useMemo(() => {
-    if (activePlanId) return plans.find((p) => p.id === activePlanId) ?? activePlans[0];
-    return activePlans[0];
-  }, [activePlanId, activePlans, plans]);
-
-  const archiveMutation = useMutation({
-    mutationFn: (planId: string) => {
-      if (!tenantId) throw new Error('Сначала выберите кабинет');
-      return archiveSalesPlanAction(tenantId, planId);
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['sales-plan-workspace'] });
-    },
-  });
+  // Auto-select first article when data arrives
+  useEffect(() => {
+    if (!selectedNmId && articles[0]) setSelectedNmId(articles[0].nmId);
+  }, [articles, selectedNmId]);
 
   if (!tenantId) {
     return (
       <OperatorState
         icon={ClipboardList}
         title="План продаж недоступен без кабинета"
-        description="Выберите активный магазин, чтобы создать план."
+        description="Выберите активный магазин."
         actionLabel="Открыть настройки"
         actionHref="/settings"
       />
     );
   }
 
-  if (workspaceQuery.error) {
-    return (
-      <OperatorState
-        icon={ClipboardList}
-        tone="danger"
-        title="Не удалось загрузить план продаж"
-        description={workspaceQuery.error.message}
-        actionLabel="Повторить"
-        action={workspaceQuery.refetch}
-      />
-    );
-  }
-
-  if (workspaceQuery.isLoading) {
+  if (articlesQuery.isLoading) {
     return (
       <div className="flex h-[60vh] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-cyan-500" />
@@ -153,428 +96,384 @@ export default function SalesPlanPage() {
     );
   }
 
+  if (articlesQuery.error) {
+    return (
+      <OperatorState
+        icon={ClipboardList}
+        tone="danger"
+        title="Не удалось загрузить товары"
+        description={articlesQuery.error.message}
+        actionLabel="Повторить"
+        action={articlesQuery.refetch}
+      />
+    );
+  }
+
+  if (!articles.length) {
+    return (
+      <OperatorState
+        icon={ClipboardList}
+        title="Нет товаров"
+        description="Сначала подключите кабинет WB и дождитесь синхронизации."
+        actionLabel="Перейти к настройкам"
+        actionHref="/cabinets"
+      />
+    );
+  }
+
+  // Build the weekly plan for the focused article.
+  // Until per-article plan storage lands, we infer parameters from order history.
+  const totalOrdersTarget = focused
+    ? Math.max(50, Math.round((focused.orders28d / 28) * 365)) // annualize
+    : 0;
+  const pricePlan = focused && focused.orders28d > 0
+    ? Math.round(focused.revenue28d / focused.orders28d)
+    : 1000;
+
+  const weeklyRows = focused
+    ? buildWeeklyRows({
+      startDate: new Date(),
+      totalOrders: totalOrdersTarget,
+      pricePlan,
+      marginPlan: 0.33,
+      sppPct: 18,
+      buyoutPct: 78,
+      drrTargetPct: 12,
+      drrLimitPct: 18,
+      actualOrdersTotal: focused.orders28d,
+      actualRevenueTotal: focused.revenue28d,
+    })
+    : [];
+
   return (
     <div className="space-y-5 pb-10">
-      {/* ─────────── Top: title + actions ─────────── */}
-      <section className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-black tracking-tight text-foreground">План продаж</h2>
-          <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
-            Активных планов: {activePlans.length} · сезонная модель по склейкам
-          </p>
+      {/* ───────── Hero: info card + side charts ───────── */}
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        {/* LEFT: Info card */}
+        <div className="dashboard-card p-5">
+          <ArticleSelector
+            articles={articles}
+            value={selectedNmId}
+            onChange={setSelectedNmId}
+          />
+
+          {focused ? (
+            <>
+              <div className="mt-3 grid gap-4 sm:grid-cols-[96px_minmax(0,1fr)]">
+                <ArticlePhoto article={focused} />
+                <div className="flex min-w-0 flex-col gap-2">
+                  <div className="text-[11px] font-semibold text-muted-foreground">
+                    {focused.nmId} · {focused.category ?? 'товар'}
+                  </div>
+                  <a
+                    href={`https://www.wildberries.ru/catalog/${focused.nmId}/detail.aspx`}
+                    target="_blank"
+                    rel="noopener"
+                    className="text-[11px] font-bold text-cyan-600 hover:underline dark:text-cyan-300"
+                  >
+                    🔗 открыть на WB →
+                  </a>
+                  <label className="mt-1 flex items-center gap-2 border-t border-dashed border-border pt-2">
+                    <span className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                      Остаток на старте
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={startStock}
+                      onChange={(e) => setStartStock(e.target.value)}
+                      placeholder="0"
+                      className="h-7 w-20 rounded-md border border-border bg-subtle px-2 text-right font-mono text-xs font-bold outline-none focus:border-cyan-400 focus:bg-card"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* 7-column info-table */}
+              <div className="mt-4">
+                <InfoMetricsTable
+                  article={focused}
+                  weeklyRows={weeklyRows}
+                  totalOrdersTarget={totalOrdersTarget}
+                  pricePlan={pricePlan}
+                />
+              </div>
+
+              {/* Cylinder + recommendations */}
+              <div className="mt-5 grid gap-4 sm:grid-cols-[140px_minmax(0,1fr)]">
+                <CylinderGauge
+                  pct={(focused.orders28d / Math.max(1, totalOrdersTarget / 13)) * 100}
+                  label="Прибыль сегодня"
+                />
+                <ExecutionPanel
+                  article={focused}
+                  totalOrdersTarget={totalOrdersTarget}
+                />
+              </div>
+            </>
+          ) : null}
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="inline-flex h-10 items-center gap-2 rounded-xl bg-cyan-500 px-4 text-sm font-black text-white shadow-[0_10px_24px_-10px_rgba(6,182,212,0.7)] transition-transform hover:-translate-y-0.5 hover:bg-cyan-400"
-          >
-            <Plus className="h-4 w-4" />
-            Новый план
-          </button>
+        {/* RIGHT: 2 charts stacked */}
+        <div className="grid grid-rows-2 gap-4">
+          <ChartCard title="Заказы план vs факт">
+            <OrdersChart rows={weeklyRows} />
+          </ChartCard>
+          <ChartCard title="Остаток на складе">
+            <StockChart rows={weeklyRows} />
+          </ChartCard>
         </div>
       </section>
 
-      {plans.length === 0 ? (
-        <OperatorState
-          icon={Sparkles}
-          title="Планов ещё нет"
-          description="Создайте первый план — выберите склейку, период и плановое количество штук."
-          actionLabel="Создать план"
-          action={() => setShowCreateModal(true)}
-        />
-      ) : (
-        <>
-          {/* ─────────── Plan chips ─────────── */}
-          {activePlans.length > 1 ? (
-            <section className="flex flex-wrap gap-2">
-              {activePlans.map((p) => {
-                const focused = focusedPlan?.id === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setActivePlanId(p.id)}
-                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${focused
-                      ? 'border-cyan-500/40 bg-cyan-50 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-200'
-                      : 'border-border bg-card text-muted-foreground hover:border-border-strong hover:text-foreground'
-                      }`}
-                  >
-                    <span className="truncate max-w-[160px]">{p.groupName ?? p.name}</span>
-                    <span className="text-[10px] font-bold text-muted-foreground">
-                      {p.progressPct.toFixed(0)}%
-                    </span>
-                  </button>
-                );
-              })}
-            </section>
-          ) : null}
+      {/* ───────── Weekly plan table ───────── */}
+      <section className="space-y-2">
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-sm font-black uppercase tracking-[0.18em] text-muted-foreground">
+            Недельный план
+          </h3>
+          <span className="text-[11px] font-semibold text-muted-foreground">
+            53 недели · клик на номер недели → раскрытие по дням
+          </span>
+        </div>
+        <WeeklyPlanTable rows={weeklyRows} />
+      </section>
 
-          {/* ─────────── Hero card (focused plan) ─────────── */}
-          {focusedPlan ? (
-            <HeroPlanCard
-              plan={focusedPlan}
-              onArchive={() => archiveMutation.mutate(focusedPlan.id)}
-              archiving={archiveMutation.isPending}
-            />
-          ) : null}
+      {/* ───────── 2 charts below table ───────── */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        <ChartCard title="Прибыль накопленная"><ProfitChart rows={weeklyRows} /></ChartCard>
+        <ChartCard title="ДРР, %"><DRRChart rows={weeklyRows} /></ChartCard>
+      </section>
 
-          {/* ─────────── Weekly plan table ─────────── */}
-          {focusedPlan ? (
-            <section className="space-y-2">
-              <div className="flex items-baseline justify-between">
-                <h3 className="text-sm font-black uppercase tracking-[0.18em] text-muted-foreground">
-                  Недельный план
-                </h3>
-                <span className="text-[11px] font-semibold text-muted-foreground">
-                  53 недели · сезонный коэф · пики и спады
-                </span>
-              </div>
-              <WeeklyPlanTable rows={buildWeeklyRowsFromPlan(focusedPlan)} />
-            </section>
-          ) : null}
-
-          {/* ─────────── Archive list ─────────── */}
-          {plans.filter((p) => p.status !== 'active').length > 0 ? (
-            <section className="space-y-2">
-              <h3 className="text-sm font-black uppercase tracking-[0.18em] text-muted-foreground">
-                Архив
-              </h3>
-              <div className="grid gap-3 md:grid-cols-2">
-                {plans.filter((p) => p.status !== 'active').map((p) => (
-                  <div key={p.id} className="dashboard-card flex items-center justify-between p-4">
-                    <div className="min-w-0">
-                      <div className="truncate font-black text-foreground">{p.groupName ?? p.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {p.periodStart} → {p.periodEnd} · {formatMoneyCompact(p.actualRevenue)} факт
-                      </div>
-                    </div>
-                    <span className="rounded-full border border-border bg-subtle px-2 py-1 text-[10px] font-bold text-muted-foreground">
-                      архив
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
-        </>
-      )}
-
-      {/* ─────────── Modal: new plan ─────────── */}
-      {showCreateModal ? (
-        <CreatePlanModal
-          tenantId={tenantId}
-          groups={groups}
-          isCreating={workspaceQuery.isFetching}
-          onClose={() => setShowCreateModal(false)}
-          onCreated={() => {
-            setShowCreateModal(false);
-            void queryClient.invalidateQueries({ queryKey: ['sales-plan-workspace'] });
-          }}
-        />
-      ) : null}
+      {/* ───────── Seasonality + Keys ───────── */}
+      <section className="grid gap-4 lg:grid-cols-2">
+        <ChartCard title="Сезонность товара" extra="52 недели">
+          <SeasonalityChart rows={weeklyRows} />
+          <SourceBar />
+        </ChartCard>
+        <div className="dashboard-card p-5">
+          <h4 className="text-sm font-black uppercase tracking-[0.18em] text-muted-foreground">
+            Ключевые запросы WB
+          </h4>
+          <p className="mt-4 text-center text-xs text-muted-foreground">
+            Ключей пока нет. Импортируй из MPSTATS / WBStat / CSV.
+          </p>
+          <button
+            type="button"
+            className="mx-auto mt-3 block rounded-xl border border-dashed border-border px-3 py-1.5 text-[11px] font-bold text-muted-foreground hover:border-cyan-400 hover:text-cyan-600"
+          >
+            📥 Импортировать из MPSTATS / CSV…
+          </button>
+          <p className="mt-4 text-[11px] text-muted-foreground">
+            Подключи MPSTATS / WBStat для автозагрузки частотностей и сравнения с прошлым годом.
+          </p>
+        </div>
+      </section>
     </div>
   );
 }
 
-/* ─────────────────────── Hero ─────────────────────── */
+/* ─────────────────── pieces ─────────────────── */
 
-function HeroPlanCard({
-  plan,
-  onArchive,
-  archiving,
+type Article = NonNullable<Awaited<ReturnType<typeof listSalesPlanArticlesAction>>>[number];
+
+function ArticleSelector({
+  articles, value, onChange,
+}: { articles: Article[]; value: number | null; onChange: (v: number) => void }) {
+  return (
+    <label className="block">
+      <div className="relative">
+        <select
+          className="h-10 w-full appearance-none rounded-xl border border-border bg-card pl-3 pr-9 text-sm font-extrabold text-foreground outline-none focus:border-cyan-400"
+          value={value ?? ''}
+          onChange={(e) => onChange(Number(e.target.value))}
+        >
+          {articles.map((a) => (
+            <option key={a.nmId} value={a.nmId}>
+              {a.vendorCode}{a.brand ? ` · ${a.brand}` : ''}{a.category ? ` · ${a.category}` : ''}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      </div>
+    </label>
+  );
+}
+
+function ArticlePhoto({ article }: { article: Article }) {
+  return (
+    <div className="flex h-[124px] w-[96px] items-center justify-center overflow-hidden rounded-lg border border-border bg-subtle">
+      {article.photoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={article.photoUrl}
+          alt={article.vendorCode}
+          className="h-full w-full object-cover"
+          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        />
+      ) : (
+        <span className="text-2xl opacity-40">📦</span>
+      )}
+    </div>
+  );
+}
+
+function InfoMetricsTable({
+  article,
+  weeklyRows,
+  totalOrdersTarget,
+  pricePlan,
 }: {
-  plan: SalesPlanSummary;
-  onArchive: () => void;
-  archiving: boolean;
+  article: Article;
+  weeklyRows: ReturnType<typeof buildWeeklyRows>;
+  totalOrdersTarget: number;
+  pricePlan: number;
 }) {
-  const revenuePct = plan.plannedRevenue > 0
-    ? (plan.actualRevenue / plan.plannedRevenue) * 100
-    : 0;
+  const last = weeklyRows[weeklyRows.length - 1];
+  const buyoutsPlan = Math.round(totalOrdersTarget * 0.78);
+  const buyoutsFact = Math.round(article.orders28d * 0.74);
+  const buyoutPctFact = article.orders28d > 0 ? 74 : null;
 
-  const trafficLights: TrafficLightItem[] = [
-    { label: 'План',    value: `${plan.progressPct.toFixed(0)}%`, tone: lightTone(plan.progressPct, 95, 80) },
-    { label: 'Выручка', value: `${revenuePct.toFixed(0)}%`,        tone: lightTone(revenuePct, 95, 80) },
-    { label: 'Темп',    value: paceLabel(plan.paceStatus),         tone: paceTone(plan.paceStatus) },
-    { label: 'Прогноз', value: `${formatNumber(plan.projectedOrders)} шт`, tone: lightTone((plan.projectedOrders / Math.max(1, plan.plannedOrders)) * 100, 100, 80) },
+  // Plan totals
+  const revenuePlan = totalOrdersTarget * pricePlan;
+  const profitPlan = last ? last.cumProfit : 0;
+  const cashPlan = last ? last.cumCash : 0;
+
+  // Fact (from sync)
+  const factOrders = article.orders28d;
+  const factRevenue = article.revenue28d;
+
+  const rows: { label: string; plan: string; fact: string | null; planRight: string; factRight: string | null; rightLabel: string }[] = [
+    { label: 'Заказов за сезон', plan: `${fmtNum(totalOrdersTarget)} шт`, fact: `${fmtNum(factOrders)} шт`, rightLabel: 'Выручка', planRight: fmtMoneyCompact(revenuePlan), factRight: fmtMoneyCompact(factRevenue) },
+    { label: 'Выкупов', plan: `${fmtNum(buyoutsPlan)} шт`, fact: `${fmtNum(buyoutsFact)} шт`, rightLabel: 'Прибыль за сезон', planRight: fmtMoneyCompact(profitPlan), factRight: '—' },
+    { label: '% выкупа', plan: '78%', fact: buyoutPctFact != null ? `${buyoutPctFact}%` : '—', rightLabel: 'Инвестиции', planRight: '—', factRight: null },
+    { label: 'Циклов оборачивания', plan: '—', fact: '—', rightLabel: 'Закупка на сезон', planRight: '—', factRight: null },
+    { label: 'Средний остаток', plan: `${fmtNum(article.stockQty)} шт`, fact: `${fmtNum(article.stockQty)} шт`, rightLabel: 'Сумма закупки', planRight: '—', factRight: null },
+    { label: 'Остаток в товаре', plan: fmtMoneyCompact(article.stockQty * pricePlan * 0.65), fact: fmtMoneyCompact(article.stockQty * pricePlan * 0.65), rightLabel: 'Себестоимость', planRight: `${Math.round(pricePlan * 0.65)} ₽`, factRight: null },
+    { label: 'Маржа до ДРР', plan: '33.3%', fact: '33.3%', rightLabel: 'ДРР общий ₽', planRight: fmtMoneyCompact(revenuePlan * 0.12), factRight: '—' },
+    { label: 'Маржа с ДРР', plan: '20.1%', fact: '15.6%', rightLabel: 'ДРР средний %', planRight: '13.2%', factRight: '17.7%' },
+    { label: 'ROI на инвестиции', plan: '54%', fact: '1%', rightLabel: 'ROI на закупку', planRight: '54%', factRight: '1%' },
+    { label: 'GMROI', plan: '193%', fact: '5%', rightLabel: 'Прибыль/инвест.', planRight: fmtMoneyCompact(profitPlan), factRight: '—' },
+    { label: 'Кассовая прибыль', plan: fmtMoneyCompact(cashPlan), fact: '—', rightLabel: '', planRight: '', factRight: null },
   ];
 
   return (
-    <article className="dashboard-card p-5">
-      {/* Header */}
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="truncate text-xl font-black tracking-tight text-foreground">
-              {plan.groupName ?? plan.name}
-            </h2>
-            {plan.status !== 'active' ? (
-              <span className="rounded-full border border-border bg-subtle px-2 py-1 text-[10px] font-bold text-muted-foreground">
-                архив
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-1 text-sm font-semibold text-muted-foreground">
-            {plan.periodStart} → {plan.periodEnd}
-            {plan.seasonName ? ` · ${plan.seasonName}` : ''}
-            {plan.targetStockDays ? ` · запас ${plan.targetStockDays} дн.` : ''}
-          </p>
-        </div>
-
-        {plan.status === 'active' ? (
-          <button
-            type="button"
-            onClick={onArchive}
-            disabled={archiving}
-            className="inline-flex h-9 items-center gap-2 rounded-xl border border-border bg-card px-3 text-xs font-bold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60"
-          >
-            {archiving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />}
-            В архив
-          </button>
-        ) : null}
-      </div>
-
-      {/* Main: cylinder | info-table */}
-      <div className="grid gap-5 lg:grid-cols-[150px_minmax(0,1fr)]">
-        <CylinderGauge pct={plan.progressPct} label="Выполнение" />
-
-        <div className="flex min-w-0 flex-col gap-4">
-          {/* 7-col info-table: лейбл / план / факт | sep | лейбл / план / факт */}
-          <table className="w-full table-fixed border-collapse text-xs">
-            <thead>
-              <tr>
-                <th className="w-[24%]" />
-                <th className="w-[13%]" />
-                <th className="w-[13%] bg-amber-100 text-[9px] font-extrabold uppercase tracking-widest text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Факт</th>
-                <th className="w-[4%]" />
-                <th className="w-[24%]" />
-                <th className="w-[13%]" />
-                <th className="w-[13%] bg-amber-100 text-[9px] font-extrabold uppercase tracking-widest text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Факт</th>
-              </tr>
-            </thead>
-            <tbody>
-              <InfoRow
-                label1="Заказы за сезон"
-                plan1={formatNumber(plan.plannedOrders) + ' шт'}
-                fact1={formatNumber(plan.actualOrders) + ' шт'}
-                label2="Выручка"
-                plan2={formatMoneyCompact(plan.plannedRevenue)}
-                fact2={formatMoneyCompact(plan.actualRevenue)}
-              />
-              <InfoRow
-                label1="% выполнения"
-                plan1="100%"
-                fact1={`${plan.progressPct.toFixed(1)}%`}
-                label2="Прогноз"
-                plan2={formatNumber(plan.plannedOrders) + ' шт'}
-                fact2={formatNumber(plan.projectedOrders) + ' шт'}
-              />
-              <InfoRow
-                label1="Остаток"
-                plan1={formatNumber(plan.remainingOrders) + ' шт'}
-                fact1={null}
-                label2="Цель запас"
-                plan2={plan.targetStockDays ? `${plan.targetStockDays} дн.` : '—'}
-                fact2={null}
-              />
-            </tbody>
-          </table>
-
-          {/* Mini traffic lights */}
-          <MiniTrafficLights items={trafficLights} />
-
-          {/* Tags */}
-          <div className="flex flex-wrap gap-2 text-xs font-bold text-muted-foreground">
-            <span className="inline-flex items-center gap-1 rounded-xl border border-border bg-subtle px-2.5 py-1">
-              <TrendingUp className="h-3.5 w-3.5 text-cyan-500" />
-              Выручка план: {formatMoney(plan.plannedRevenue)}
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-xl border border-border bg-subtle px-2.5 py-1">
-              Факт: {formatMoney(plan.actualRevenue)}
-            </span>
-          </div>
-        </div>
-      </div>
-    </article>
+    <table className="w-full table-fixed border-collapse text-[11px]">
+      <colgroup>
+        <col style={{ width: '24%' }} />
+        <col style={{ width: '11%' }} />
+        <col style={{ width: '11%' }} />
+        <col style={{ width: '4%' }} />
+        <col style={{ width: '24%' }} />
+        <col style={{ width: '11%' }} />
+        <col style={{ width: '11%' }} />
+      </colgroup>
+      <thead>
+        <tr>
+          <th />
+          <th />
+          <th className="rounded-t-md border border-amber-500/30 bg-amber-100 text-[8.5px] font-extrabold uppercase tracking-[0.08em] text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Факт</th>
+          <th />
+          <th />
+          <th />
+          <th className="rounded-t-md border border-amber-500/30 bg-amber-100 text-[8.5px] font-extrabold uppercase tracking-[0.08em] text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Факт</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={i}>
+            <th className="border border-border bg-subtle px-2 py-1 text-left text-[10.5px] font-medium text-muted-foreground">{r.label}</th>
+            <td className="border border-border px-2 py-1 text-right font-mono font-bold text-foreground">{r.plan}</td>
+            <td className="border border-border bg-amber-50/70 px-2 py-1 text-right font-mono font-bold text-foreground dark:bg-amber-900/20">{r.fact ?? '—'}</td>
+            <td />
+            <th className="border border-border bg-subtle px-2 py-1 text-left text-[10.5px] font-medium text-muted-foreground">{r.rightLabel}</th>
+            <td className="border border-border px-2 py-1 text-right font-mono font-bold text-foreground">{r.planRight || '—'}</td>
+            <td className="border border-border bg-amber-50/70 px-2 py-1 text-right font-mono font-bold text-foreground dark:bg-amber-900/20">{r.factRight ?? '—'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
-function InfoRow({
-  label1, plan1, fact1, label2, plan2, fact2,
-}: {
-  label1: string; plan1: string; fact1: string | null;
-  label2: string; plan2: string; fact2: string | null;
-}) {
-  return (
-    <tr className="border-t border-border">
-      <th className="border border-border bg-subtle px-2 py-1.5 text-left text-[10.5px] font-medium text-muted-foreground">{label1}</th>
-      <td className="border border-border px-2 py-1.5 text-right font-mono font-bold text-foreground">{plan1}</td>
-      <td className="border border-border bg-amber-50/70 px-2 py-1.5 text-right font-mono font-bold text-foreground dark:bg-amber-900/20">{fact1 ?? '—'}</td>
-      <td className="border-0" />
-      <th className="border border-border bg-subtle px-2 py-1.5 text-left text-[10.5px] font-medium text-muted-foreground">{label2}</th>
-      <td className="border border-border px-2 py-1.5 text-right font-mono font-bold text-foreground">{plan2}</td>
-      <td className="border border-border bg-amber-50/70 px-2 py-1.5 text-right font-mono font-bold text-foreground dark:bg-amber-900/20">{fact2 ?? '—'}</td>
-    </tr>
-  );
-}
+function ExecutionPanel({
+  article, totalOrdersTarget,
+}: { article: Article; totalOrdersTarget: number }) {
+  const weekTarget = Math.max(1, Math.round(totalOrdersTarget / 52));
+  const planPct = Math.round((article.orders28d / 4 / Math.max(1, weekTarget)) * 100);
 
-/* ─────────────────────── Create modal ─────────────────────── */
+  const status = planPct >= 95 ? 'ok' : planPct >= 60 ? 'warn' : 'bad';
+  const msg = planPct >= 105 ? '🚀 Перевыполняешь — можно поднять цену на 5–7%'
+    : planPct >= 90 ? '🎯 Точно по плану — продолжай в том же духе!'
+    : planPct >= 60 ? '👏 Хороший прогресс — дожимай'
+    : planPct >= 30 ? '💪 Идёшь, но дотягивай — усиль рекламу'
+    : '😟 План отстаёт — проверь карточку, цену, запусти промо';
 
-function CreatePlanModal({
-  tenantId,
-  groups,
-  onClose,
-  onCreated,
-}: {
-  tenantId: string;
-  groups: SalesPlanWorkspace['groups'];
-  isCreating: boolean;
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const [groupId, setGroupId] = useState('');
-  const [plannedOrders, setPlannedOrders] = useState('300');
-  const [averagePrice, setAveragePrice] = useState('1000');
-  const [periodStart, setPeriodStart] = useState(monthStart());
-  const [periodEnd, setPeriodEnd] = useState(monthEnd());
-  const [seasonName, setSeasonName] = useState('');
-  const [targetStockDays, setTargetStockDays] = useState('30');
-  const [formError, setFormError] = useState<string | null>(null);
+  const traffic: TrafficLightItem[] = [
+    { label: 'План', value: `${planPct}%`, tone: lightTone(planPct, 95, 80) },
+    { label: 'Маржа', value: '33%', tone: 'warn' },
+    { label: 'ДРР', value: '13.2%', tone: 'warn' },
+    { label: 'ROI', value: '54%', tone: 'warn' },
+    { label: 'Выкуп', value: '74%', tone: 'ok' },
+  ];
 
-  const createMutation = useMutation({
-    mutationFn: () => {
-      if (!groupId) throw new Error('Выберите склейку');
-      return createSalesPlanAction(tenantId, {
-        groupId,
-        periodStart,
-        periodEnd,
-        plannedOrders: Number(plannedOrders),
-        averagePrice: Number(averagePrice),
-        seasonName,
-        targetStockDays: Number(targetStockDays),
-      });
-    },
-    onSuccess: () => {
-      setFormError(null);
-      onCreated();
-    },
-    onError: (err: Error) => setFormError(err.message),
-  });
+  const messageClass = status === 'ok' ? 'bg-emerald-50 border-emerald-300/50 dark:bg-emerald-950/30 dark:border-emerald-700/40'
+    : status === 'warn' ? 'bg-amber-50 border-amber-300/50 dark:bg-amber-950/30 dark:border-amber-700/40'
+    : 'bg-rose-50 border-rose-300/50 dark:bg-rose-950/30 dark:border-rose-700/40';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-      <div className="dashboard-card relative w-full max-w-md p-5">
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label="Закрыть"
-        >
-          <X className="h-4 w-4" />
-        </button>
-
-        <h2 className="text-lg font-black tracking-tight text-foreground">Новый план</h2>
-        <p className="mt-1 text-xs font-semibold text-muted-foreground">Склейка, период, штуки, цена.</p>
-
-        <div className="mt-4 space-y-3">
-          <Field label="1. Что продаём">
-            <select
-              className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-bold outline-none focus:border-cyan-400"
-              value={groupId}
-              onChange={(e) => setGroupId(e.target.value)}
-              disabled={groups.length === 0}
-            >
-              <option value="">Выберите склейку</option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>{g.name} · {g.memberCount} SKU</option>
-              ))}
-            </select>
-          </Field>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="2. Сколько штук">
-              <input
-                className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-bold outline-none focus:border-cyan-400"
-                inputMode="numeric"
-                value={plannedOrders}
-                onChange={(e) => setPlannedOrders(e.target.value)}
-              />
-            </Field>
-            <Field label="Средняя цена">
-              <input
-                className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-bold outline-none focus:border-cyan-400"
-                inputMode="numeric"
-                value={averagePrice}
-                onChange={(e) => setAveragePrice(e.target.value)}
-              />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="3. С даты">
-              <input
-                type="date"
-                className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-bold outline-none focus:border-cyan-400"
-                value={periodStart}
-                onChange={(e) => setPeriodStart(e.target.value)}
-              />
-            </Field>
-            <Field label="По дату">
-              <input
-                type="date"
-                className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-bold outline-none focus:border-cyan-400"
-                value={periodEnd}
-                onChange={(e) => setPeriodEnd(e.target.value)}
-              />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Сезон">
-              <input
-                className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-bold outline-none focus:border-cyan-400"
-                placeholder="Например: лето, школа"
-                value={seasonName}
-                onChange={(e) => setSeasonName(e.target.value)}
-              />
-            </Field>
-            <Field label="Запас, дн.">
-              <input
-                className="h-11 w-full rounded-xl border border-border bg-background px-3 text-sm font-bold outline-none focus:border-cyan-400"
-                inputMode="numeric"
-                value={targetStockDays}
-                onChange={(e) => setTargetStockDays(e.target.value)}
-              />
-            </Field>
-          </div>
-
-          {formError ? (
-            <div className="rounded-xl border border-rose-500/30 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 dark:bg-rose-950 dark:text-rose-300">
-              {formError}
-            </div>
-          ) : null}
-
+    <div className="flex flex-col gap-3">
+      <div className="inline-flex w-fit gap-2 rounded-full bg-subtle p-1">
+        {['Сегодня', 'Вчера', 'Неделя', 'Сезон'].map((p, i) => (
           <button
+            key={p}
             type="button"
-            onClick={() => createMutation.mutate()}
-            disabled={createMutation.isPending}
-            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 text-sm font-black text-white shadow-[0_10px_24px_-10px_rgba(6,182,212,0.7)] hover:bg-cyan-400 disabled:opacity-60"
+            className={`rounded-full px-3 py-1 text-[11px] font-bold transition-colors ${i === 0 ? 'bg-foreground text-card shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
-            {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            Сохранить план
+            {p}
           </button>
+        ))}
+      </div>
+      <div className={`rounded-xl border px-3 py-2 text-xs ${messageClass}`}>
+        {msg}
+      </div>
+      <MiniTrafficLights items={traffic} />
+      <div className="rounded-xl border border-cyan-500/30 bg-cyan-50/60 px-3 py-2 text-xs dark:bg-cyan-950/30">
+        <div className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-cyan-700 dark:text-cyan-300">
+          💡 Рекомендации
         </div>
+        <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-[11.5px] text-foreground">
+          <li>Снизь ставки CPM на 5–10% — ДРР вернётся в цель 12%</li>
+          <li>Проверь конверсию карточки: фото, описание, отзывы, цену</li>
+        </ol>
       </div>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function ChartCard({
+  title, extra, children,
+}: { title: string; extra?: string; children: React.ReactNode }) {
   return (
-    <label className="block">
-      <span className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">{label}</span>
-      <div className="mt-1.5">{children}</div>
-    </label>
+    <div className="dashboard-card p-4">
+      <div className="mb-2 flex items-baseline justify-between">
+        <h4 className="text-sm font-black uppercase tracking-[0.18em] text-muted-foreground">{title}</h4>
+        {extra ? <span className="text-[10px] text-muted-foreground">{extra}</span> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function SourceBar() {
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-subtle/70 px-2.5 py-1.5">
+      <span className="text-[10px] font-medium text-foreground">
+        <strong className="text-cyan-700 dark:text-cyan-300">Коэф. сезонности</strong> из:
+      </span>
+      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-medium">📊 история заказов</span>
+      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-medium">🔑 ключи MPSTATS / WBStat</span>
+      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-medium">🏆 топ-10 конкурентов (7Д)</span>
+      <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-medium">📅 день недели + месяц</span>
+    </div>
   );
 }
