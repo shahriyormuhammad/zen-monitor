@@ -27,16 +27,7 @@ export async function listSalesPlanArticles(tenantId: string): Promise<SalesPlan
   return withTenantContext(db, tenantId, async (tx) => {
     // Single CTE: products LEFT JOIN aggregated stocks + LEFT JOIN aggregated orders.
     // We tolerate the absence of raw_api_* data — values just come back as zero.
-    const result = await tx.execute<{
-      nm_id: string;
-      vendor_code: string;
-      brand: string | null;
-      category: string | null;
-      photo_url: string | null;
-      stock_qty: string;
-      orders_28d: string;
-      revenue_28d: string;
-    }>(sql`
+    const result = await tx.execute(sql`
       WITH stock_agg AS (
         SELECT nm_id, COALESCE(SUM(quantity), 0)::numeric AS qty
         FROM raw_api_stocks
@@ -73,7 +64,17 @@ export async function listSalesPlanArticles(tenantId: string): Promise<SalesPlan
       LIMIT 500
     `);
 
-    return result.rows.map((r) => ({
+    const rows = result as unknown as Array<{
+      nm_id: string;
+      vendor_code: string;
+      brand: string | null;
+      category: string | null;
+      photo_url: string | null;
+      stock_qty: string;
+      orders_28d: string;
+      revenue_28d: string;
+    }>;
+    return rows.map((r) => ({
       nmId: Number(r.nm_id),
       vendorCode: r.vendor_code,
       brand: r.brand,
