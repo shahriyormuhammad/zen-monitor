@@ -12,6 +12,7 @@ export const TENANT_FEATURES = [
   'dynamics',
   'explorer',
   'redistribution',
+  'supply',
   'reviews',
   'approvals',
   'settings',
@@ -44,6 +45,7 @@ export const TENANT_FEATURE_LABELS: Record<TenantFeature, string> = {
   dynamics: 'Динамика',
   explorer: 'Проводник',
   redistribution: 'Перераспределение',
+  supply: 'Поставка',
   reviews: 'Отзывы',
   approvals: 'Согласования',
   settings: 'Настройки',
@@ -108,6 +110,7 @@ export const TENANT_ACCESS_PRESETS: Record<TenantAccessPreset, {
       salesPlan: true,
       stocks: true,
       redistribution: true,
+      supply: true,
     },
   },
   finance_manager: {

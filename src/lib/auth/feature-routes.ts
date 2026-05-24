@@ -16,6 +16,7 @@ export const DASHBOARD_ROUTE_FEATURES: Array<{ href: string; feature: TenantFeat
   { href: '/dynamics-lab', feature: 'dynamics' },
   { href: '/explorer', feature: 'explorer' },
   { href: '/redistribution', feature: 'redistribution' },
+  { href: '/supply', feature: 'supply' },
   { href: '/reviews-qa', feature: 'reviews' },
   { href: '/approvals', feature: 'approvals' },
   { href: '/settings', feature: 'settings' },

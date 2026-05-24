@@ -10,6 +10,7 @@ import {
   LayoutList,
   Megaphone,
   MessageSquareText,
+  PackagePlus,
   PanelsTopLeft,
   Search,
   Settings,
@@ -42,6 +43,7 @@ export const dashboardNavItems: DashboardNavItem[] = [
   { name: 'Остатки', pageTitle: 'Остатки', href: '/stocks-v2', feature: 'stocks', icon: Boxes, tone: 'text-amber-500', bg: 'bg-amber-500/14' },
   { name: 'Динамика (РНП)', pageTitle: 'Динамика (РНП)', href: '/dynamics', feature: 'dynamics', icon: PanelsTopLeft, tone: 'text-cyan-500', bg: 'bg-cyan-500/14' },
   { name: 'Перераспределение', pageTitle: 'Что куда везти', href: '/redistribution', feature: 'redistribution', icon: ArrowLeftRight, tone: 'text-teal-500', bg: 'bg-teal-500/14' },
+  { name: 'Поставка', pageTitle: 'Поставка', href: '/supply', feature: 'supply', icon: PackagePlus, tone: 'text-rose-500', bg: 'bg-rose-500/14' },
   { name: 'Отзывы', pageTitle: 'Отзывы и вопросы', href: '/reviews-qa', feature: 'reviews', icon: MessageSquareText, tone: 'text-fuchsia-500', bg: 'bg-fuchsia-500/14' },
   { name: 'Согласования', pageTitle: 'Согласования', href: '/approvals', feature: 'approvals', icon: ClipboardCheck, tone: 'text-rose-500', bg: 'bg-rose-500/14' },
   { name: 'Настройки', pageTitle: 'Настройки', href: '/settings', feature: 'settings', icon: Settings, tone: 'text-slate-500', bg: 'bg-slate-500/14' },
@@ -59,6 +61,9 @@ const routeTitles = [
   { href: '/overview-test', title: 'Тестовая вкладка' },
   { href: '/explorer', title: 'Проводник данных' },
   { href: '/cabinets', title: 'Управление командой' },
+  { href: '/supply/delivery-plan', title: 'План поставки' },
+  { href: '/supply/invoice', title: 'Накладная' },
+  { href: '/supply/barcodes', title: 'ШК коробов' },
 ].sort((left, right) => right.href.length - left.href.length);
 
 export function isActiveDashboardPath(pathname: string, href: string) {
