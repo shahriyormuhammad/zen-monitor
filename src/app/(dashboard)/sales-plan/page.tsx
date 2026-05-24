@@ -271,10 +271,10 @@ function ArticleSelector({
   articles, value, onChange,
 }: { articles: Article[]; value: number | null; onChange: (v: number) => void }) {
   return (
-    <label className="block">
-      <div className="relative">
+    <label className="inline-block">
+      <div className="relative inline-block">
         <select
-          className="h-10 w-full appearance-none rounded-xl border border-border bg-card pl-3 pr-9 text-sm font-extrabold text-foreground outline-none focus:border-cyan-400"
+          className="h-7 max-w-[260px] appearance-none rounded-md border border-border bg-card pl-2 pr-7 text-[11px] font-bold text-foreground outline-none focus:border-cyan-400"
           value={value ?? ''}
           onChange={(e) => onChange(Number(e.target.value))}
         >
@@ -284,7 +284,7 @@ function ArticleSelector({
             </option>
           ))}
         </select>
-        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
       </div>
     </label>
   );
