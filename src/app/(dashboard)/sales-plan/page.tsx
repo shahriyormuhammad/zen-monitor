@@ -6,6 +6,8 @@ import { Archive, CalendarDays, CheckCircle2, ClipboardList, Loader2, Plus, Tren
 
 import { OperatorState } from '@/components/dashboard/OperatorState';
 import { useStore } from '@/store/useStore';
+import { CylinderGauge } from '@/components/sales-plan/CylinderGauge';
+import { MiniTrafficLights, lightTone, type TrafficLightItem } from '@/components/sales-plan/MiniTrafficLights';
 import {
   archiveSalesPlanAction,
   createSalesPlanAction,
@@ -332,34 +334,68 @@ function PlanCard({
         ) : null}
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MiniMetric label="План" value={`${formatNumber(plan.plannedOrders)} шт`} />
-        <MiniMetric label="Факт" value={`${formatNumber(plan.actualOrders)} шт`} />
-        <MiniMetric label="Выполнение" value={`${plan.progressPct.toFixed(1)}%`} />
-        <MiniMetric label="Прогноз" value={`${formatNumber(plan.projectedOrders)} шт`} />
-      </div>
+      {/*
+        Cylinder + KPI grid layout: левый блок — вертикальный цилиндр
+        выполнения плана; правый — компактная сетка ключевых метрик и
+        мини-светофор. Так глаз сразу попадает в "сколько процентов" и
+        потом считывает детали.
+      */}
+      <div className="mt-5 grid gap-5 sm:grid-cols-[130px_minmax(0,1fr)]">
+        <CylinderGauge pct={plan.progressPct} label="Выполнение" />
 
-      <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-        <div
-          className="h-full rounded-full bg-cyan-500"
-          style={{ width: `${Math.max(0, Math.min(100, plan.progressPct))}%` }}
-        />
-      </div>
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <MiniMetric label="План" value={`${formatNumber(plan.plannedOrders)} шт`} />
+            <MiniMetric label="Факт" value={`${formatNumber(plan.actualOrders)} шт`} />
+            <MiniMetric label="Прогноз" value={`${formatNumber(plan.projectedOrders)} шт`} />
+            <MiniMetric label="Осталось" value={`${formatNumber(plan.remainingOrders)} шт`} />
+          </div>
 
-      <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold text-muted-foreground">
-        <span className="inline-flex items-center gap-1 rounded-xl border border-border bg-subtle px-2.5 py-1">
-          <TrendingUp className="h-3.5 w-3.5 text-cyan-500" />
-          Выручка план: {formatMoney(plan.plannedRevenue)}
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-xl border border-border bg-subtle px-2.5 py-1">
-          Факт: {formatMoney(plan.actualRevenue)}
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-xl border border-border bg-subtle px-2.5 py-1">
-          Осталось: {formatNumber(plan.remainingOrders)} шт
-        </span>
+          <MiniTrafficLights items={buildTrafficLights(plan)} />
+
+          <div className="flex flex-wrap gap-2 text-xs font-bold text-muted-foreground">
+            <span className="inline-flex items-center gap-1 rounded-xl border border-border bg-subtle px-2.5 py-1">
+              <TrendingUp className="h-3.5 w-3.5 text-cyan-500" />
+              Выручка план: {formatMoney(plan.plannedRevenue)}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-xl border border-border bg-subtle px-2.5 py-1">
+              Факт: {formatMoney(plan.actualRevenue)}
+            </span>
+          </div>
+        </div>
       </div>
     </article>
   );
+}
+
+/**
+ * Compose 5-pill traffic-light row from the plan summary. Values map:
+ *   - План:        progressPct (higher better, ≥95% = ok, ≥80% = warn)
+ *   - Выручка:     actual / planned revenue (higher better)
+ *   - Скорость:    paceStatus enum
+ *   - Прогноз:     projected vs planned (higher better)
+ *   - Остаток дн.: targetStockDays (informational, neutral)
+ */
+function buildTrafficLights(plan: SalesPlanSummary): TrafficLightItem[] {
+  const revenuePct = plan.plannedRevenue > 0
+    ? (plan.actualRevenue / plan.plannedRevenue) * 100
+    : 0;
+  const projectionPct = plan.plannedOrders > 0
+    ? (plan.projectedOrders / plan.plannedOrders) * 100
+    : 0;
+
+  const paceTone: TrafficLightItem['tone'] =
+    plan.paceStatus === 'ahead' ? 'ok'
+    : plan.paceStatus === 'on_track' ? 'ok'
+    : plan.paceStatus === 'behind' ? 'bad'
+    : 'idle';
+
+  return [
+    { label: 'План',     value: `${plan.progressPct.toFixed(0)}%`, tone: lightTone(plan.progressPct, 95, 80) },
+    { label: 'Выручка',  value: `${revenuePct.toFixed(0)}%`,        tone: lightTone(revenuePct, 95, 80) },
+    { label: 'Темп',     value: paceLabel(plan.paceStatus),         tone: paceTone },
+    { label: 'Прогноз',  value: `${projectionPct.toFixed(0)}%`,     tone: lightTone(projectionPct, 100, 80) },
+  ];
 }
 
 function MiniMetric({ label, value }: { label: string; value: string }) {
