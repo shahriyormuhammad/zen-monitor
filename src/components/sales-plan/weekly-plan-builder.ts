@@ -32,8 +32,16 @@ export type WeeklyPlanBuilderInput = {
   actualOrdersTotal?: number;
   /** Optional actual revenue so far (from sync). */
   actualRevenueTotal?: number;
+  /** Stock on warehouse at week 1 (before any deliveries). Default 0. */
+  initialStock?: number;
   /** Optional supply schedule: weeks where deliveries are placed, with qty each. */
   supplies?: { wk: number; qty: number }[];
+  /**
+   * Auto-supply policy: when supplies array is empty/missing, plan deliveries
+   * to keep ~targetWeeksCoverage of orders covered (default 4).
+   * Disable by passing 0.
+   */
+  autoSupplyTargetWeeks?: number;
 };
 
 /**
@@ -64,12 +72,16 @@ export function buildWeeklyRows(input: WeeklyPlanBuilderInput): WeeklyRow[] {
   const totalCoef = coefs.reduce((s, c) => s + c, 0) || 1;
   const ramp = (i: number) => (i < 4 ? (i + 1) / 4 : 1);
 
-  // Supply lookup
+  // Supply lookup — manual schedule wins if provided, otherwise we auto-generate
+  // periodic deliveries below.
   const supplyByWk = new Map(input.supplies?.map((s) => [s.wk, s.qty] as const) ?? []);
+  const autoSupplyWeeks = input.supplies?.length
+    ? 0
+    : (input.autoSupplyTargetWeeks ?? 4);
 
   // Build rows
   const rows: WeeklyRow[] = [];
-  let stock = 0;
+  let stock = Math.max(0, input.initialStock ?? 0);
   let cumProfit = 0;
   let cumCash = 0;
   let cumInvest = 0;
@@ -87,7 +99,24 @@ export function buildWeeklyRows(input: WeeklyPlanBuilderInput): WeeklyRow[] {
     const baseSpeed = input.totalOrders * (coefs[i]! / totalCoef);
     const planOrders = Math.max(0, Math.round(baseSpeed * ramp(i)));
 
-    const supplies = supplyByWk.get(i + 1) ?? 0;
+    // Manual supply OR auto-supply: top stock back up to N weeks of coverage
+    // whenever runway drops below 2 weeks (smooth saw-tooth pattern).
+    let supplies = supplyByWk.get(i + 1) ?? 0;
+    if (supplies === 0 && autoSupplyWeeks > 0) {
+      // Forward-looking window: average orders over the next autoSupplyWeeks weeks
+      let forwardAvg = 0;
+      let forwardCount = 0;
+      for (let j = i; j < Math.min(weeks, i + autoSupplyWeeks); j++) {
+        forwardAvg += input.totalOrders * (coefs[j]! / totalCoef) * ramp(j);
+        forwardCount += 1;
+      }
+      const avgWeeklyDemand = forwardCount > 0 ? forwardAvg / forwardCount : 0;
+      const targetStock = Math.ceil(avgWeeklyDemand * autoSupplyWeeks);
+      const runwayWeeks = avgWeeklyDemand > 0 ? stock / avgWeeklyDemand : Infinity;
+      if (runwayWeeks < 2 && targetStock > stock) {
+        supplies = targetStock - stock;
+      }
+    }
     stock += supplies;
     const ordersThisWeek = Math.min(planOrders, Math.max(0, stock));
 

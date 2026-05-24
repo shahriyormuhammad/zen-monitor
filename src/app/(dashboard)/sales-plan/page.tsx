@@ -130,6 +130,12 @@ export default function SalesPlanPage() {
     ? Math.round(focused.revenue28d / focused.orders28d)
     : 1000;
 
+  // Initial stock: user-typed value wins; otherwise fall back to actual WB stock.
+  const startStockNum = Number(startStock);
+  const initialStock = Number.isFinite(startStockNum) && startStockNum > 0
+    ? startStockNum
+    : (focused?.stockQty ?? 0);
+
   const weeklyRows = focused
     ? buildWeeklyRows({
       startDate: new Date(),
@@ -142,6 +148,8 @@ export default function SalesPlanPage() {
       drrLimitPct: 18,
       actualOrdersTotal: focused.orders28d,
       actualRevenueTotal: focused.revenue28d,
+      initialStock,
+      autoSupplyTargetWeeks: 4,
     })
     : [];
 
