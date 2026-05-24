@@ -10,6 +10,7 @@ const ROUTES_WITHOUT_DATE_CONTROLS = [
   '/economics',
   '/economics-v2',
   '/reviews-qa',
+  '/sales-plan',
   '/seo',
   '/settings',
   '/signals',
