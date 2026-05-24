@@ -147,9 +147,9 @@ const HEAD_FACT = 'sticky top-0 z-10 border border-border bg-amber-50 px-2 py-1.
 const CELL = 'border border-border px-2 py-1 text-right whitespace-nowrap';
 const CELL_FACT = 'border border-border bg-amber-50/50 px-2 py-1 text-right whitespace-nowrap dark:bg-amber-900/15';
 
-// Vertical divider between column groups — thicker, darker left border so the
+// Vertical divider between column groups — thick black left border so the
 // reader instantly sees where one group ends and the next begins.
-const SEP = 'border-l-[2px] border-l-slate-400 dark:border-l-slate-500';
+const SEP = 'border-l-[2px] border-l-foreground dark:border-l-foreground';
 
 export function WeeklyPlanTable({ rows, highlightToday = true }: Props) {
   const phases: SeasonKind[] = useMemo(
