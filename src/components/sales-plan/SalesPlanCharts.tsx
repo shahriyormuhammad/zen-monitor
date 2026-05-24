@@ -131,7 +131,7 @@ export function SeasonalityChart({ rows, height = 180 }: { rows: WeeklyRow[]; he
         <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
         <XAxis dataKey="week" tick={tickProps} interval={5} />
         <YAxis tick={tickProps} width={36} domain={[0, 170]} tickFormatter={(v) => `${v}%`} />
-        <Tooltip formatter={(value: number) => `${value.toFixed(0)}%`} />
+        <Tooltip formatter={(value) => (typeof value === 'number' ? `${value.toFixed(0)}%` : `${value}`)} />
         <Area type="monotone" dataKey="season" name="Коэф сезона" stroke={CYAN} fill={CYAN} fillOpacity={0.16} strokeWidth={2} />
       </AreaChart>
     </ResponsiveContainer>
