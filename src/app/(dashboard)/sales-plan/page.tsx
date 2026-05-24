@@ -56,7 +56,6 @@ function fmtMoneyCompact(n: number | null | undefined): string {
 export default function SalesPlanPage() {
   const { tenantId } = useStore();
   const [selectedNmId, setSelectedNmId] = useState<number | null>(null);
-  const [startStock, setStartStock] = useState<string>('0');
 
   const articlesQuery = useQuery({
     queryKey: ['sales-plan-articles', tenantId],
@@ -130,11 +129,8 @@ export default function SalesPlanPage() {
     ? Math.round(focused.revenue28d / focused.orders28d)
     : 1000;
 
-  // Initial stock: user-typed value wins; otherwise fall back to actual WB stock.
-  const startStockNum = Number(startStock);
-  const initialStock = Number.isFinite(startStockNum) && startStockNum > 0
-    ? startStockNum
-    : (focused?.stockQty ?? 0);
+  // Initial stock comes straight from the WB sync — no manual override.
+  const initialStock = focused?.stockQty ?? 0;
 
   const weeklyRows = focused
     ? buildWeeklyRows({
@@ -181,19 +177,6 @@ export default function SalesPlanPage() {
                   >
                     🔗 открыть на WB →
                   </a>
-                  <label className="mt-1 flex items-center gap-2 border-t border-dashed border-border pt-2">
-                    <span className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
-                      Остаток на старте
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={startStock}
-                      onChange={(e) => setStartStock(e.target.value)}
-                      placeholder="0"
-                      className="h-7 w-20 rounded-md border border-border bg-subtle px-2 text-right font-mono text-xs font-bold outline-none focus:border-cyan-400 focus:bg-card"
-                    />
-                  </label>
                 </div>
               </div>
 
