@@ -24,10 +24,10 @@ export type SalesPlanArticle = {
 };
 
 export async function listSalesPlanArticles(tenantId: string): Promise<SalesPlanArticle[]> {
-  return withTenantContext(tenantId, async () => {
+  return withTenantContext(db, tenantId, async (tx) => {
     // Single CTE: products LEFT JOIN aggregated stocks + LEFT JOIN aggregated orders.
     // We tolerate the absence of raw_api_* data — values just come back as zero.
-    const result = await db.execute<{
+    const result = await tx.execute<{
       nm_id: string;
       vendor_code: string;
       brand: string | null;
