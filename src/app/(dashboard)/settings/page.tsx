@@ -9,6 +9,7 @@ import {
 import { SyncButton } from './SyncButton';
 import { WbLkAuthFlow } from './WbLkAuthFlow';
 import { PasswordSettingsCard } from './PasswordSettingsCard';
+import { SizeProfilesCard } from './SizeProfilesCard';
 import { CsvUpload } from '@/components/dashboard/CsvUpload';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
@@ -1282,6 +1283,8 @@ export default function SettingsPage() {
             ) : null}
 
             <PasswordSettingsCard />
+
+            <SizeProfilesCard />
           </div>
         </div>
       )}

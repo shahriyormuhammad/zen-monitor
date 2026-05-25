@@ -15,6 +15,7 @@ const ROUTES_WITHOUT_DATE_CONTROLS = [
   '/settings',
   '/signals',
   '/stocks-v2',
+  '/supply',
 ] as const;
 
 function routeMatches(pathname: string | null, route: string) {

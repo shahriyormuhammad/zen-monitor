@@ -2073,3 +2073,31 @@ export const wbFeedbackSnapshots = pgTable('wb_feedback_snapshots', {
   wbFeedbackSnapshotsTenantTypeDateIdx: index('wb_feedback_snapshots_tenant_type_date_idx').on(table.tenantId, table.itemType, table.createdAtWb),
   wbFeedbackSnapshotsTenantNmIdx: index('wb_feedback_snapshots_tenant_nm_idx').on(table.tenantId, table.nmId, table.createdAtWb),
 }));
+
+/**
+ * Size profiles ("Ростовки") — per-article box composition.
+ * One nmId can have multiple named profiles to cover the case when the same
+ * article ships in different physical boxes (e.g. Подростковая 37-41 vs
+ * Взрослая 41-46). Created from templates or imported from WB Content API.
+ */
+export type SizeProfileSize = {
+  size: string;
+  perBox: number;
+  barcode?: string;
+};
+
+export const sizeProfiles = pgTable('size_profiles', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  nmId: bigint('nm_id', { mode: 'number' }).notNull(),
+  vendorCode: varchar('vendor_code', { length: 255 }).notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  sizes: jsonb('sizes').$type<SizeProfileSize[]>().default(sql`'[]'::jsonb`).notNull(),
+  totalPerBox: integer('total_per_box').default(0).notNull(),
+  isDefault: boolean('is_default').default(false).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  sizeProfilesTenantNmIdx: index('size_profiles_tenant_nm_idx').on(table.tenantId, table.nmId),
+  sizeProfilesTenantVcIdx: index('size_profiles_tenant_vc_idx').on(table.tenantId, table.vendorCode),
+}));
