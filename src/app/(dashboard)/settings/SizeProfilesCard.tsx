@@ -22,6 +22,7 @@ import {
 import { useStore } from '@/store/useStore';
 import {
   deleteSizeProfileAction,
+  detectArticleSizesAction,
   loadSizeProfilesSnapshot,
   setSizeProfileDefaultAction,
   upsertSizeProfileAction,
@@ -32,6 +33,7 @@ import type { SizeProfileSize } from '@/lib/db/schema';
 import {
   SIZE_PROFILE_TEMPLATES,
   SIZE_PROFILE_TEMPLATE_GROUP_LABEL,
+  buildAutoTemplate,
   isWideSizeRange,
   type SizeProfileTemplate,
 } from '@/server/size-profiles/templates';
@@ -294,6 +296,20 @@ function ProfileEditorModal({
   );
   const [error, setError] = useState<string | null>(null);
 
+  // Detected sizes from order history → auto-template
+  const detectedQuery = useQuery({
+    queryKey: ['detected-sizes', tenantId, article.nmId],
+    queryFn: () => detectArticleSizesAction(tenantId!, article.nmId),
+    enabled: Boolean(tenantId) && mode === 'create',
+    staleTime: 5 * 60_000,
+  });
+  const detectedSizes = detectedQuery.data ?? [];
+  const autoTemplate = useMemo(
+    () => mode === 'create' ? buildAutoTemplate(detectedSizes) : null,
+    [mode, detectedSizes],
+  );
+  const [autoApplied, setAutoApplied] = useState(false);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose();
@@ -308,6 +324,16 @@ function ProfileEditorModal({
     setName(tpl.name);
     setRows(tpl.sizes.map((s) => ({ size: s.size, perBox: s.perBox })));
   };
+
+  // Auto-apply the detected template once, when modal opens in "create" mode
+  // and the user hasn't typed anything yet.
+  useEffect(() => {
+    if (autoApplied || mode !== 'create' || !autoTemplate) return;
+    if (rows.length === 0 && !name) {
+      applyTemplate(autoTemplate);
+      setAutoApplied(true);
+    }
+  }, [autoTemplate, autoApplied, mode, rows.length, name]);
 
   const updateRow = (index: number, patch: Partial<SizeProfileSize>) => {
     setRows((prev) => prev.map((r, i) => i === index ? { ...r, ...patch } : r));
@@ -349,10 +375,52 @@ function ProfileEditorModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
+          {/* Auto-template banner — detected sizes from order history */}
+          {mode === 'create' && autoTemplate ? (
+            <div className="mb-4 rounded-2xl border border-emerald-300/60 bg-emerald-50 p-3 dark:border-emerald-700/40 dark:bg-emerald-950/30">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[10.5px] font-black uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
+                    🎯 Авто-шаблон по размерам артикула
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1 text-[12.5px] font-bold text-foreground">
+                    <span>Найдены размеры:</span>
+                    {detectedSizes.map((s) => (
+                      <span key={s} className="inline-flex items-center rounded-md bg-card px-1.5 py-0.5 font-mono text-[11px] text-emerald-700 dark:text-emerald-300">
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="mt-1 text-[11px] text-muted-foreground">
+                    Шаблон: <strong>{autoTemplate.name}</strong> · <strong>{autoTemplate.sizes.reduce((s, r) => s + r.perBox, 0)} пар/коробка</strong>
+                    <span className="ml-1.5">{autoTemplate.sizes.map((r) => `${r.size}×${r.perBox}`).join(' · ')}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => applyTemplate(autoTemplate)}
+                  className="shrink-0 rounded-lg bg-emerald-500 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-600"
+                >
+                  Применить
+                </button>
+              </div>
+              <p className="mt-2 text-[10.5px] text-muted-foreground">
+                Правило: центр размерного ряда — по 2 пары, крайние — по 1. Сумма стремится к 8 парам/коробке.
+              </p>
+            </div>
+          ) : null}
+
+          {mode === 'create' && detectedQuery.isLoading ? (
+            <div className="mb-4 flex items-center gap-2 rounded-2xl border border-border bg-subtle/40 p-3 text-[12px] text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Определяю размеры артикула по истории заказов…
+            </div>
+          ) : null}
+
           {/* Templates */}
           {mode === 'create' ? (
             <div className="mb-4">
-              <div className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">Шаблон (опционально)</div>
+              <div className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">Готовые шаблоны</div>
               <div className="flex flex-wrap gap-1.5">
                 {SIZE_PROFILE_TEMPLATES.map((tpl) => (
                   <button

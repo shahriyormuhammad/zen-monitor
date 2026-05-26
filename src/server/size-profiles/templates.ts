@@ -164,3 +164,71 @@ export function isWideSizeRange(sizes: { size: string }[]): boolean {
   if (nums.length < 2) return false;
   return Math.max(...nums) - Math.min(...nums) >= 7;
 }
+
+/**
+ * User-specified auto-rule: detected sizes → per-box distribution targeting
+ * ~`targetPerBox` pairs/box (default 8), with central sizes getting more.
+ *
+ * Examples (target = 8):
+ *   41-46 (6 sizes)  → 1,1,2,2,1,1  (43-44 по 2)
+ *   37-41 (5 sizes)  → 1,2,2,2,1    (38-39-40 по 2)
+ *   36-41 (6 sizes)  → 1,1,2,2,1,1  (38-39 по 2)
+ *   40-45 (6 sizes)  → 1,1,2,2,1,1
+ *   35-41 (7 sizes)  → 1,1,1,2,1,1,1 (38 — центр)
+ *
+ * Wider ranges (>= 9 sizes) stay at 1 per size — the user should split.
+ */
+export function suggestDistribution(
+  sizes: string[],
+  targetPerBox = 8,
+): { size: string; perBox: number }[] {
+  const n = sizes.length;
+  if (n === 0) return [];
+  const base = sizes.map((s) => ({ size: s, perBox: 1 }));
+  if (n >= targetPerBox) return base;
+
+  let extras = targetPerBox - n;
+  // If we'd need more than 1 extra per size (very small ranges, e.g. n=3),
+  // distribute as evenly as possible from the centre outwards.
+  while (extras > 0) {
+    // Find indexes still equal to the minimum perBox, prioritise centre.
+    const minVal = Math.min(...base.map((r) => r.perBox));
+    const candidates: number[] = [];
+    for (let i = 0; i < n; i++) {
+      if (base[i]!.perBox === minVal) candidates.push(i);
+    }
+    if (candidates.length === 0) break;
+    const need = Math.min(extras, candidates.length);
+    // Take the central `need` candidates.
+    const start = Math.floor((candidates.length - need) / 2);
+    for (let k = 0; k < need; k++) {
+      base[candidates[start + k]!]!.perBox += 1;
+    }
+    extras -= need;
+  }
+  return base;
+}
+
+/**
+ * Build a synthetic template named after the detected size range
+ * (e.g. "Авто 41-46 (8 пар)") with the user's central-bias rule applied.
+ * Falls back to null when sizes is empty.
+ */
+export function buildAutoTemplate(
+  sizes: string[],
+  targetPerBox = 8,
+): SizeProfileTemplate | null {
+  if (sizes.length === 0) return null;
+  const dist = suggestDistribution(sizes, targetPerBox);
+  const first = sizes[0]!;
+  const last = sizes[sizes.length - 1]!;
+  const total = dist.reduce((s, r) => s + r.perBox, 0);
+  const range = sizes.length === 1 ? first : `${first}-${last}`;
+  return {
+    id: `auto-${range}`,
+    name: `Авто ${range}`,
+    hint: `${total} пар по найденным размерам · центр размерного ряда — по 2`,
+    group: 'shoes-adult',
+    sizes: dist,
+  };
+}

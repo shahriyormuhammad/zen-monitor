@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { requireTenantFeatureAccess } from '@/lib/auth/tenant-access';
 import {
   deleteProfile,
+  detectArticleSizes,
   listArticleCatalog,
   listProfiles,
   setProfileDefault,
@@ -50,4 +51,9 @@ export async function setSizeProfileDefaultAction(tenantId: string, id: string):
   await setProfileDefault(tenantId, id);
   revalidatePath('/settings');
   revalidatePath('/supply');
+}
+
+export async function detectArticleSizesAction(tenantId: string, nmId: number): Promise<string[]> {
+  await requireTenantFeatureAccess(tenantId, 'settings');
+  return detectArticleSizes(tenantId, nmId);
 }

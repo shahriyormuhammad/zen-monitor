@@ -41,6 +41,38 @@ export type ArticleCatalogEntry = {
   photoUrl: string | null;
 };
 
+/**
+ * Detect which sizes a given article actually ships in, based on the
+ * tech_size column of historical orders. Returns sizes sorted numerically
+ * where possible, falling back to lexical order for non-numeric labels.
+ */
+export async function detectArticleSizes(
+  tenantId: string,
+  nmId: number,
+): Promise<string[]> {
+  return withTenantContext(db, tenantId, async (tx) => {
+    const result = await tx.execute(sql`
+      SELECT DISTINCT tech_size
+      FROM raw_api_orders
+      WHERE tenant_id = ${tenantId}
+        AND nm_id = ${nmId}
+        AND tech_size IS NOT NULL
+        AND tech_size <> ''
+        AND tech_size <> '0'
+    `);
+    const rows = result as unknown as Array<{ tech_size: string }>;
+    return rows
+      .map((r) => r.tech_size.trim())
+      .filter((s) => s.length > 0)
+      .sort((a, b) => {
+        const an = parseFloat(a);
+        const bn = parseFloat(b);
+        if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+        return a.localeCompare(b, 'ru');
+      });
+  });
+}
+
 /** Article catalogue from the products table (sync-fed). */
 export async function listArticleCatalog(tenantId: string): Promise<ArticleCatalogEntry[]> {
   return withTenantContext(db, tenantId, async (tx) => {
