@@ -15,10 +15,11 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, FileText, Loader2, Plus, Trash2, X } from 'lucide-react';
 
 import {
+  listSupplyArticlesAction,
   processInvoiceAction,
   type InvoiceRowInput,
 } from '@/app/(dashboard)/supply/actions';
@@ -57,6 +58,15 @@ function expandShorthand(rawRows: Row[]): { article: string; boxes: number; inpu
 
 export function InvoiceTab({ tenantId }: { tenantId: string }) {
   const queryClient = useQueryClient();
+
+  const articlesQuery = useQuery({
+    queryKey: ['supply-articles', tenantId],
+    queryFn: () => listSupplyArticlesAction(tenantId),
+    enabled: Boolean(tenantId),
+    staleTime: 60_000,
+  });
+  const articles = articlesQuery.data ?? [];
+
   const [rows, setRows] = useState<Row[]>([{ id: makeId(), article: '', boxes: '' }]);
   const lastRef = useRef<HTMLInputElement | null>(null);
 
@@ -97,27 +107,31 @@ export function InvoiceTab({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="dashboard-card p-5">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h3 className="text-[15px] font-extrabold">Накладная</h3>
-            <p className="mt-0.5 max-w-2xl text-[12px] text-muted-foreground">
-              Вбей пары «артикул → коробок» из бумажной накладной. Система найдёт сохранённую ростовку
-              (даже если ввёл только часть кода: <code className="rounded bg-subtle px-1 font-mono text-[11px]">519-5</code> найдёт <code className="rounded bg-subtle px-1 font-mono text-[11px]">A519-5 ТН-10</code>),
-              умножит её на коробки и добавит в список поставки. Сокращение <code className="rounded bg-subtle px-1 font-mono text-[11px]">-5</code> после <code className="rounded bg-subtle px-1 font-mono text-[11px]">A519-2</code> = <code className="rounded bg-subtle px-1 font-mono text-[11px]">A519-5</code>. Enter в поле «коробок» добавляет строку.
-            </p>
-          </div>
-        </div>
+      <div className="dashboard-card p-4">
+        <h3 className="text-[14px] font-extrabold">Накладная</h3>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">
+          Вбей пары «артикул → коробок». Подсказки появляются по мере ввода. Часть кода тоже сработает: <code className="rounded bg-subtle px-1 font-mono">519-5</code> → <code className="rounded bg-subtle px-1 font-mono">A519-5 ТН-10</code>. Сокращение <code className="rounded bg-subtle px-1 font-mono">-5</code> после <code className="rounded bg-subtle px-1 font-mono">A519-2</code> = <code className="rounded bg-subtle px-1 font-mono">A519-5</code>. Enter в поле «Кор.» добавляет строку.
+        </p>
 
-        <div className="mt-4 flex flex-col gap-2">
+        <datalist id="invoice-vc-list">
+          {articles.map((a) => (
+            <option key={a.nmId} value={a.vendorCode}>
+              {a.brand ? `${a.brand} · ` : ''}{a.category ?? ''}
+            </option>
+          ))}
+        </datalist>
+
+        <div className="mt-3 flex flex-col gap-1">
           {rows.map((row, idx) => (
-            <div key={row.id} className="grid items-center gap-2 sm:grid-cols-[40px_minmax(0,1fr)_120px_40px]">
-              <span className="text-[11px] font-bold text-muted-foreground">#{idx + 1}</span>
+            <div key={row.id} className="grid items-center gap-1.5 sm:grid-cols-[28px_minmax(0,1fr)_90px_28px]">
+              <span className="text-[10px] font-bold text-muted-foreground">#{idx + 1}</span>
               <input
                 value={row.article}
                 onChange={(e) => updateRow(row.id, { article: e.target.value })}
-                placeholder="Артикул (или -N для продолжения)"
-                className="h-9 w-full rounded-lg border border-border bg-card px-3 text-[12px] outline-none focus:border-rose-400"
+                placeholder="Артикул (или -N)"
+                list="invoice-vc-list"
+                autoComplete="off"
+                className="h-7 w-full rounded-md border border-border bg-card px-2 text-[12px] outline-none focus:border-rose-400"
               />
               <input
                 ref={idx === rows.length - 1 ? lastRef : undefined}
@@ -126,48 +140,48 @@ export function InvoiceTab({ tenantId }: { tenantId: string }) {
                 onKeyDown={handleBoxesKey}
                 placeholder="Кор."
                 inputMode="numeric"
-                className="h-9 w-full rounded-lg border border-border bg-card px-3 text-right font-mono text-[12px] outline-none focus:border-rose-400"
+                className="h-7 w-full rounded-md border border-border bg-card px-2 text-right font-mono text-[12px] outline-none focus:border-rose-400"
               />
               <button
                 type="button"
                 onClick={() => removeRow(row.id)}
-                className="rounded-md border border-border p-1.5 text-rose-500 hover:bg-rose-50 disabled:opacity-30 dark:hover:bg-rose-950/40"
+                className="grid h-7 w-7 place-items-center rounded-md border border-border text-rose-500 hover:bg-rose-50 disabled:opacity-30 dark:hover:bg-rose-950/40"
                 disabled={rows.length <= 1}
                 title="Удалить строку"
               >
-                <X className="h-3.5 w-3.5" />
+                <X className="h-3 w-3" />
               </button>
             </div>
           ))}
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <button
             type="button"
             onClick={addRow}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border bg-subtle/40 px-3 py-2 text-[11px] font-bold text-muted-foreground hover:border-rose-400 hover:text-foreground"
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-dashed border-border bg-subtle/40 px-2 text-[11px] font-bold text-muted-foreground hover:border-rose-400 hover:text-foreground"
           >
-            <Plus className="h-3.5 w-3.5" /> Добавить строку
+            <Plus className="h-3 w-3" /> Строку
           </button>
           <button
             type="button"
             onClick={() => processMutation.mutate()}
             disabled={processMutation.isPending || expanded.length === 0}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-[12px] font-bold text-card hover:bg-foreground/90 disabled:opacity-40"
+            className="inline-flex h-7 items-center gap-1 rounded-md bg-foreground px-3 text-[11px] font-bold text-card hover:bg-foreground/90 disabled:opacity-40"
           >
-            {processMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
-            Обработать накладную
+            {processMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
+            Обработать
           </button>
           <button
             type="button"
             onClick={clearAll}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-[11px] font-bold text-muted-foreground hover:text-foreground"
+            className="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] font-bold text-muted-foreground hover:text-foreground"
           >
-            <Trash2 className="h-3.5 w-3.5" /> Очистить
+            <Trash2 className="h-3 w-3" /> Очистить
           </button>
           {expanded.length > 0 ? (
-            <span className="text-[11px] text-muted-foreground">
-              К обработке: <strong>{expanded.length}</strong> {expanded.length === 1 ? 'строка' : expanded.length < 5 ? 'строки' : 'строк'}
+            <span className="ml-1 text-[10.5px] text-muted-foreground">
+              К обработке: <strong>{expanded.length}</strong>
             </span>
           ) : null}
         </div>
