@@ -28,10 +28,12 @@ function normalise(s: string): string {
 }
 
 export function ArticleAutocomplete({
-  value, onChange, articles, placeholder, className,
+  value, onChange, onPick, articles, placeholder, className,
 }: {
   value: string;
   onChange: (v: string) => void;
+  /** Fires with the full article when the user picks one from the dropdown. */
+  onPick?: (a: AutocompleteArticle) => void;
   articles: AutocompleteArticle[];
   placeholder?: string;
   /** Tailwind classes for the input element. Default uses h-7 compact size. */
@@ -72,6 +74,7 @@ export function ArticleAutocomplete({
 
   const pick = (a: AutocompleteArticle) => {
     onChange(a.vendorCode);
+    onPick?.(a);
     setOpen(false);
     setTimeout(() => inputRef.current?.blur(), 0);
   };

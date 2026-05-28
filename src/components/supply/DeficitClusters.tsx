@@ -14,13 +14,14 @@
  * компоненте DeficitWidgets.
  */
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, Search } from 'lucide-react';
+import { ChevronRight, Loader2, Plus, Search } from 'lucide-react';
 
 import {
   addSupplyItemAction,
   loadDeficitTableAction,
+  loadSizeBreakdownAction,
   listProfilesForArticleAction,
 } from '@/app/(dashboard)/supply/actions';
 import type { DeficitResult, DeficitRow } from '@/server/supply/deficit';
@@ -48,6 +49,7 @@ export function DeficitClusters({ tenantId }: { tenantId: string }) {
   const [activeOkrugs, setActiveOkrugs] = useState<Set<OkrugCode>>(() => new Set(ALL_OKRUGS));
   const [search, setSearch] = useState('');
   const [adding, setAdding] = useState<number | null>(null);
+  const [expandedNm, setExpandedNm] = useState<number | null>(null);
   const queryClient = useQueryClient();
 
   const deficitQuery = useQuery({
@@ -237,51 +239,74 @@ export function DeficitClusters({ tenantId }: { tenantId: string }) {
             {/* Article rows */}
             {filteredRows.slice(0, 300).map((row) => {
               const isAdding = adding === row.nmId;
+              const isExpanded = expandedNm === row.nmId;
+              const colCount = 3 + okrugList.length * 3;
               return (
-                <tr key={row.nmId} className="border-t border-border hover:bg-rose-50/40 dark:hover:bg-rose-950/15">
-                  <td className="sticky left-0 z-10 bg-card/95 px-2 py-1.5 backdrop-blur">
-                    <div className="flex items-center gap-2">
-                      {row.photoUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={row.photoUrl} alt={row.vendorCode} className="h-8 w-6 shrink-0 rounded object-cover" />
-                      ) : (
-                        <div className="grid h-8 w-6 shrink-0 place-items-center rounded bg-subtle text-[9px] text-muted-foreground">—</div>
-                      )}
-                      <div className="min-w-0">
-                        <div className="truncate font-bold text-foreground">{row.vendorCode}</div>
-                        <div className="truncate text-[10px] text-muted-foreground">
-                          {row.brand ?? '—'}{row.category ? ` · ${row.category}` : ''}
+                <Fragment key={row.nmId}>
+                  <tr className="border-t border-border hover:bg-rose-50/40 dark:hover:bg-rose-950/15">
+                    <td className="sticky left-0 z-10 bg-card/95 px-2 py-1.5 backdrop-blur">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedNm(isExpanded ? null : row.nmId)}
+                        className="flex w-full items-center gap-2 text-left"
+                        title="Показать разбивку по размерам"
+                      >
+                        <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                        {row.photoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={row.photoUrl} alt={row.vendorCode} className="h-8 w-6 shrink-0 rounded object-cover" />
+                        ) : (
+                          <div className="grid h-8 w-6 shrink-0 place-items-center rounded bg-subtle text-[9px] text-muted-foreground">—</div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="truncate font-bold text-foreground">{row.vendorCode}</div>
+                          <div className="truncate text-[10px] text-muted-foreground">
+                            {row.brand ?? '—'}{row.category ? ` · ${row.category}` : ''}
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-2 py-1.5 text-right">
-                    {row.activeNeed > 0 ? (
-                      <span className="font-mono font-bold text-rose-700">{fmtNum(row.activeNeed)}</span>
-                    ) : (
-                      <span className="font-mono text-muted-foreground">0</span>
-                    )}
-                    {row.topNeedOkrug && row.activeNeed > 0 ? (
-                      <div className="text-[9.5px] text-muted-foreground">{row.topNeedOkrug}</div>
-                    ) : null}
-                  </td>
-                  {okrugList.map((okrug) => {
-                    const cell = row.byOkrug[okrug] ?? { sales: 0, stock: 0, need: 0 };
-                    return <FragmentCells key={okrug} cell={cell} />;
-                  })}
-                  <td className="px-2 py-1.5 text-right">
-                    <button
-                      type="button"
-                      disabled={isAdding || row.activeNeed === 0}
-                      onClick={() => { setAdding(row.nmId); addMutation.mutate({ row, need: row.activeNeed }); }}
-                      className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-card px-2 text-[10.5px] font-bold text-foreground hover:border-rose-400 disabled:opacity-30"
-                      title={row.activeNeed === 0 ? 'Дефицита нет' : 'Добавить в список поставки'}
-                    >
-                      {isAdding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
-                      В план
-                    </button>
-                  </td>
-                </tr>
+                      </button>
+                    </td>
+                    <td className="px-2 py-1.5 text-right">
+                      {row.activeNeed > 0 ? (
+                        <span className="font-mono font-bold text-rose-700">{fmtNum(row.activeNeed)}</span>
+                      ) : (
+                        <span className="font-mono text-muted-foreground">0</span>
+                      )}
+                      {row.topNeedOkrug && row.activeNeed > 0 ? (
+                        <div className="text-[9.5px] text-muted-foreground">{row.topNeedOkrug}</div>
+                      ) : null}
+                    </td>
+                    {okrugList.map((okrug) => {
+                      const cell = row.byOkrug[okrug] ?? { sales: 0, stock: 0, need: 0 };
+                      return <FragmentCells key={okrug} cell={cell} />;
+                    })}
+                    <td className="px-2 py-1.5 text-right">
+                      <button
+                        type="button"
+                        disabled={isAdding || row.activeNeed === 0}
+                        onClick={() => { setAdding(row.nmId); addMutation.mutate({ row, need: row.activeNeed }); }}
+                        className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-card px-2 text-[10.5px] font-bold text-foreground hover:border-rose-400 disabled:opacity-30"
+                        title={row.activeNeed === 0 ? 'Дефицита нет' : 'Добавить в список поставки'}
+                      >
+                        {isAdding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                        В план
+                      </button>
+                    </td>
+                  </tr>
+                  {isExpanded ? (
+                    <tr className="bg-subtle/40">
+                      <td colSpan={colCount} className="px-4 py-2">
+                        <SizeBreakdown
+                          tenantId={tenantId}
+                          nmId={row.nmId}
+                          vendorCode={row.vendorCode}
+                          periodDays={periodDays}
+                          forecastDays={forecastDays}
+                        />
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               );
             })}
           </tbody>
@@ -349,5 +374,59 @@ function FragmentCells({ cell }: { cell: { sales: number; stock: number; need: n
         {cell.need > 0 ? fmtNum(cell.need) : '—'}
       </td>
     </>
+  );
+}
+
+/** Lazy-loaded per-size sales/stock/need breakdown shown when a row expands. */
+function SizeBreakdown({
+  tenantId, nmId, vendorCode, periodDays, forecastDays,
+}: {
+  tenantId: string;
+  nmId: number;
+  vendorCode: string;
+  periodDays: number;
+  forecastDays: number;
+}) {
+  const query = useQuery({
+    queryKey: ['size-breakdown', tenantId, nmId, periodDays, forecastDays],
+    queryFn: () => loadSizeBreakdownAction(tenantId, nmId, periodDays, forecastDays),
+    enabled: Boolean(tenantId),
+    staleTime: 30_000,
+  });
+
+  if (query.isLoading) {
+    return <div className="flex items-center gap-2 text-[11px] text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> загрузка размеров…</div>;
+  }
+  const rows = query.data ?? [];
+  if (rows.length === 0) {
+    return <div className="text-[11px] text-muted-foreground">Нет данных по размерам для {vendorCode}.</div>;
+  }
+
+  return (
+    <div>
+      <div className="mb-1.5 text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+        Разбивка по размерам · {vendorCode} (продажи за {periodDays} дн, прогноз {forecastDays} дн)
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {rows.map((r) => (
+          <div
+            key={r.size}
+            className={`min-w-[72px] rounded-lg border px-2 py-1.5 text-center ${
+              r.need > 0
+                ? 'border-rose-300 bg-rose-50 dark:border-rose-700/40 dark:bg-rose-950/30'
+                : 'border-border bg-card'
+            }`}
+          >
+            <div className="font-mono text-[13px] font-extrabold text-foreground">{r.size}</div>
+            <div className="mt-0.5 text-[9.5px] text-muted-foreground">
+              прод <span className="font-bold text-foreground">{fmtNum(r.sales)}</span> · ост <span className="font-bold text-foreground">{fmtNum(r.stock)}</span>
+            </div>
+            <div className={`text-[10px] font-bold ${r.need > 0 ? 'text-rose-700 dark:text-rose-300' : 'text-muted-foreground'}`}>
+              нужно {fmtNum(r.need)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

@@ -229,3 +229,76 @@ export async function computeDeficitTable(
 function emptyTotals(): DeficitTotals {
   return { modelsCount: 0, withDeficit: 0, totalForecastNeed: 0, byOkrug: {} };
 }
+
+/* ── Size breakdown for one article (row expand) ─────────── */
+
+export type SizeDeficitRow = {
+  size: string;
+  sales: number;
+  stock: number;
+  need: number;
+};
+
+/**
+ * Per-size deficit for one nmId: sales from raw_api_orders.tech_size,
+ * stock from raw_api_stock_sizes.stock_count, need = max(0,
+ * ceil(sales/period × forecast) − stock). Sizes sorted numerically.
+ */
+export async function computeSizeBreakdown(
+  tenantId: string,
+  nmId: number,
+  input: DeficitInput,
+): Promise<SizeDeficitRow[]> {
+  const periodDays = Math.max(7, Math.min(180, Math.round(input.periodDays)));
+  const forecastDays = Math.max(7, Math.min(180, Math.round(input.forecastDays)));
+
+  return withTenantContext(db, tenantId, async (tx) => {
+    const salesRes = await tx.execute(sql`
+      SELECT tech_size AS size, COUNT(*)::int AS cnt
+      FROM raw_api_orders
+      WHERE tenant_id = ${tenantId}
+        AND nm_id = ${nmId}
+        AND is_cancel = false
+        AND tech_size IS NOT NULL AND tech_size <> '' AND tech_size <> '0'
+        AND date >= NOW() - (${periodDays} || ' days')::interval
+      GROUP BY tech_size
+    `);
+    const salesRows = salesRes as unknown as Array<{ size: string; cnt: number }>;
+
+    const stockRes = await tx.execute(sql`
+      SELECT size_name AS size, SUM(stock_count)::int AS qty
+      FROM raw_api_stock_sizes
+      WHERE tenant_id = ${tenantId}
+        AND nm_id = ${nmId}
+        AND size_name IS NOT NULL AND size_name <> '' AND size_name <> '0'
+      GROUP BY size_name
+    `);
+    const stockRows = stockRes as unknown as Array<{ size: string; qty: number }>;
+
+    const sizes = new Map<string, { sales: number; stock: number }>();
+    for (const r of salesRows) {
+      const s = r.size.trim();
+      const e = sizes.get(s) ?? { sales: 0, stock: 0 };
+      e.sales += r.cnt;
+      sizes.set(s, e);
+    }
+    for (const r of stockRows) {
+      const s = r.size.trim();
+      const e = sizes.get(s) ?? { sales: 0, stock: 0 };
+      e.stock += r.qty;
+      sizes.set(s, e);
+    }
+
+    return Array.from(sizes.entries())
+      .map(([size, v]) => {
+        const forecastSales = Math.ceil((v.sales / periodDays) * forecastDays);
+        return { size, sales: v.sales, stock: v.stock, need: Math.max(0, forecastSales - v.stock) };
+      })
+      .sort((a, b) => {
+        const an = parseFloat(a.size);
+        const bn = parseFloat(b.size);
+        if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+        return a.size.localeCompare(b.size, 'ru');
+      });
+  });
+}

@@ -19,16 +19,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, FileText, Loader2, Plus, Trash2, X } from 'lucide-react';
 
 import {
+  listProfilesForArticleAction,
   listSupplyArticlesAction,
   processInvoiceAction,
   type InvoiceRowInput,
 } from '@/app/(dashboard)/supply/actions';
+import type { ProfileForDropdown } from '@/server/supply-builder/service';
 import { ArticleAutocomplete } from './ArticleAutocomplete';
 
 type Row = {
   id: string;
   article: string;
   boxes: string;
+  /** nmId captured when the user picks from the dropdown (enables profile select). */
+  nmId: number | null;
+  profileId: string;
 };
 
 function makeId(): string {
@@ -68,17 +73,17 @@ export function InvoiceTab({ tenantId }: { tenantId: string }) {
   });
   const articles = articlesQuery.data ?? [];
 
-  const [rows, setRows] = useState<Row[]>([{ id: makeId(), article: '', boxes: '' }]);
+  const [rows, setRows] = useState<Row[]>([{ id: makeId(), article: '', boxes: '', nmId: null, profileId: '' }]);
   const lastRef = useRef<HTMLInputElement | null>(null);
 
   const expanded = useMemo(() => expandShorthand(rows), [rows]);
 
-  const addRow = () => setRows((prev) => prev.concat({ id: makeId(), article: '', boxes: '' }));
+  const addRow = () => setRows((prev) => prev.concat({ id: makeId(), article: '', boxes: '', nmId: null, profileId: '' }));
   const updateRow = (id: string, patch: Partial<Row>) =>
     setRows((prev) => prev.map((r) => r.id === id ? { ...r, ...patch } : r));
   const removeRow = (id: string) =>
     setRows((prev) => prev.length > 1 ? prev.filter((r) => r.id !== id) : prev);
-  const clearAll = () => setRows([{ id: makeId(), article: '', boxes: '' }]);
+  const clearAll = () => setRows([{ id: makeId(), article: '', boxes: '', nmId: null, profileId: '' }]);
 
   useEffect(() => {
     if (lastRef.current) lastRef.current.focus();
@@ -86,11 +91,15 @@ export function InvoiceTab({ tenantId }: { tenantId: string }) {
 
   const processMutation = useMutation({
     mutationFn: async () => {
-      const inputs: InvoiceRowInput[] = expanded.map((r) => ({
-        inputText: r.inputText,
-        article: r.article,
-        boxes: r.boxes,
-      }));
+      const inputs: InvoiceRowInput[] = expanded.map((r) => {
+        const srcRow = rows.find((x) => x.id === r.rowId);
+        return {
+          inputText: r.inputText,
+          article: r.article,
+          boxes: r.boxes,
+          profileId: srcRow?.profileId || null,
+        };
+      });
       if (inputs.length === 0) throw new Error('Нет заполненных строк');
       return processInvoiceAction(tenantId, inputs);
     },
@@ -114,34 +123,46 @@ export function InvoiceTab({ tenantId }: { tenantId: string }) {
           Вбей пары «артикул → коробок». Подсказки появляются по мере ввода. Часть кода тоже сработает: <code className="rounded bg-subtle px-1 font-mono">519-5</code> → <code className="rounded bg-subtle px-1 font-mono">A519-5 ТН-10</code>. Сокращение <code className="rounded bg-subtle px-1 font-mono">-5</code> после <code className="rounded bg-subtle px-1 font-mono">A519-2</code> = <code className="rounded bg-subtle px-1 font-mono">A519-5</code>. Enter в поле «Кор.» добавляет строку.
         </p>
 
-        <div className="mt-3 flex max-w-[600px] flex-col gap-1">
+        <div className="mt-3 flex max-w-[600px] flex-col gap-1.5">
           {rows.map((row, idx) => (
-            <div key={row.id} className="grid items-center gap-1.5 grid-cols-[28px_minmax(0,1fr)_70px_28px]">
-              <span className="text-[10px] font-bold text-muted-foreground">#{idx + 1}</span>
-              <ArticleAutocomplete
-                value={row.article}
-                onChange={(v) => updateRow(row.id, { article: v })}
-                articles={articles}
-                placeholder="Артикул (или -N)"
-              />
-              <input
-                ref={idx === rows.length - 1 ? lastRef : undefined}
-                value={row.boxes}
-                onChange={(e) => updateRow(row.id, { boxes: e.target.value.replace(/\D/g, '') })}
-                onKeyDown={handleBoxesKey}
-                placeholder="Кор."
-                inputMode="numeric"
-                className="h-7 w-full rounded-md border border-border bg-card px-2 text-right font-mono text-[12px] outline-none focus:border-rose-400"
-              />
-              <button
-                type="button"
-                onClick={() => removeRow(row.id)}
-                className="grid h-7 w-7 place-items-center rounded-md border border-border text-rose-500 hover:bg-rose-50 disabled:opacity-30 dark:hover:bg-rose-950/40"
-                disabled={rows.length <= 1}
-                title="Удалить строку"
-              >
-                <X className="h-3 w-3" />
-              </button>
+            <div key={row.id} className="flex flex-col gap-1">
+              <div className="grid items-center gap-1.5 grid-cols-[28px_minmax(0,1fr)_70px_28px]">
+                <span className="text-[10px] font-bold text-muted-foreground">#{idx + 1}</span>
+                <ArticleAutocomplete
+                  value={row.article}
+                  onChange={(v) => updateRow(row.id, { article: v })}
+                  onPick={(a) => updateRow(row.id, { article: a.vendorCode, nmId: a.nmId, profileId: '' })}
+                  articles={articles}
+                  placeholder="Артикул (или -N)"
+                />
+                <input
+                  ref={idx === rows.length - 1 ? lastRef : undefined}
+                  value={row.boxes}
+                  onChange={(e) => updateRow(row.id, { boxes: e.target.value.replace(/\D/g, '') })}
+                  onKeyDown={handleBoxesKey}
+                  placeholder="Кор."
+                  inputMode="numeric"
+                  className="h-7 w-full rounded-md border border-border bg-card px-2 text-right font-mono text-[12px] outline-none focus:border-rose-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeRow(row.id)}
+                  className="grid h-7 w-7 place-items-center rounded-md border border-border text-rose-500 hover:bg-rose-50 disabled:opacity-30 dark:hover:bg-rose-950/40"
+                  disabled={rows.length <= 1}
+                  title="Удалить строку"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+              {row.nmId ? (
+                <RowProfilePicker
+                  tenantId={tenantId}
+                  nmId={row.nmId}
+                  vendorCode={row.article}
+                  value={row.profileId}
+                  onChange={(pid) => updateRow(row.id, { profileId: pid })}
+                />
+              ) : null}
             </div>
           ))}
         </div>
@@ -237,3 +258,41 @@ export function InvoiceTab({ tenantId }: { tenantId: string }) {
   );
 }
 
+
+/** Per-row ростовка picker: only renders a select when the article has 2+
+ *  profiles (Подростковая / Взрослая). One profile → silent default. */
+function RowProfilePicker({
+  tenantId, nmId, vendorCode, value, onChange,
+}: {
+  tenantId: string;
+  nmId: number;
+  vendorCode: string;
+  value: string;
+  onChange: (profileId: string) => void;
+}) {
+  const query = useQuery({
+    queryKey: ['profiles-for-article', tenantId, nmId, vendorCode],
+    queryFn: () => listProfilesForArticleAction(tenantId, nmId, vendorCode),
+    enabled: Boolean(tenantId && nmId),
+    staleTime: 30_000,
+  });
+  const profiles: ProfileForDropdown[] = query.data ?? [];
+  if (profiles.length <= 1) return null; // single ростовка → no choice needed
+
+  return (
+    <div className="ml-[34px] flex items-center gap-1.5">
+      <span className="text-[10px] text-muted-foreground">Ростовка:</span>
+      <select
+        value={value || (profiles.find((p) => p.isDefault)?.id ?? profiles[0]!.id)}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-6 max-w-[280px] rounded-md border border-border bg-card px-1.5 text-[11px] outline-none focus:border-rose-400"
+      >
+        {profiles.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name} — {p.totalPerBox} пар {p.isDefault ? '(по умолч.)' : ''}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}

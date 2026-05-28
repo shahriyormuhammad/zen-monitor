@@ -11,7 +11,9 @@ import {
 } from '@/server/supply/distribution';
 import {
   computeDeficitTable,
+  computeSizeBreakdown,
   type DeficitResult,
+  type SizeDeficitRow,
 } from '@/server/supply/deficit';
 import {
   addSupplyItem,
@@ -58,6 +60,16 @@ export async function loadDeficitTableAction(
 ): Promise<DeficitResult> {
   await requireTenantFeatureAccess(tenantId, 'supply');
   return computeDeficitTable(tenantId, { periodDays, forecastDays });
+}
+
+export async function loadSizeBreakdownAction(
+  tenantId: string,
+  nmId: number,
+  periodDays: number,
+  forecastDays: number,
+): Promise<SizeDeficitRow[]> {
+  await requireTenantFeatureAccess(tenantId, 'supply');
+  return computeSizeBreakdown(tenantId, nmId, { periodDays, forecastDays });
 }
 
 /* ── Supply list (Шаг 1 + 2 + 3 shared storage) ─────────── */
