@@ -2095,9 +2095,18 @@ export const sizeProfiles = pgTable('size_profiles', {
   sizes: jsonb('sizes').$type<SizeProfileSize[]>().default(sql`'[]'::jsonb`).notNull(),
   totalPerBox: integer('total_per_box').default(0).notNull(),
   isDefault: boolean('is_default').default(false).notNull(),
+  /**
+   * If the profile was materialised from a built-in template (e.g. "41-46"),
+   * this remembers the template id so we can:
+   *   • avoid duplicating the split on every page load,
+   *   • migrate older profiles when template perBox maps change.
+   * Null when the user typed the profile by hand.
+   */
+  sourceTemplate: varchar('source_template', { length: 64 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   sizeProfilesTenantNmIdx: index('size_profiles_tenant_nm_idx').on(table.tenantId, table.nmId),
   sizeProfilesTenantVcIdx: index('size_profiles_tenant_vc_idx').on(table.tenantId, table.vendorCode),
+  sizeProfilesTenantNmTemplateIdx: index('size_profiles_tenant_nm_template_idx').on(table.tenantId, table.nmId, table.sourceTemplate),
 }));

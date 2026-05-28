@@ -1,22 +1,23 @@
 'use client';
 
 /**
- * Settings card: «Ростовки».
+ * Settings card: «Ростовки» — direct port of Postal's panel-setup Ростовки.
  *
- *   - Search bar over the article catalogue
- *   - Article rows with their profiles (+ default pill)
- *   - "+ Создать профиль" → modal with: name input, sizes grid (checkboxes
- *     + perBox per row), template picker (10 footwear presets), live total
- *
- * Why a separate component: keeps the giant settings/page.tsx readable
- * (this card alone is ~500 LOC).
+ * Behaviour:
+ *   - On mount, the server materialises default + template-split profiles
+ *     for every synced article that has order history. The user doesn't
+ *     have to click anything for them to appear.
+ *   - Each article row shows its profiles (default first, isDefault pill)
+ *     plus a "+ Профиль" button for manual extras.
+ *   - The modal offers the 4 built-in templates (41-46, 41-45, 37-41,
+ *     36-41) as quick-fill chips.
  */
 
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle2, ChevronDown, ChevronUp, Loader2, Pencil,
-  Plus, Search, Star, Trash2, X,
+  Plus, Search, Sparkles, Star, Trash2, X,
 } from 'lucide-react';
 
 import { useStore } from '@/store/useStore';
@@ -31,11 +32,12 @@ import {
 import type { SizeProfile } from '@/server/size-profiles/service';
 import type { SizeProfileSize } from '@/lib/db/schema';
 import {
-  SIZE_PROFILE_TEMPLATES,
-  SIZE_PROFILE_TEMPLATE_GROUP_LABEL,
-  buildAutoTemplate,
+  SIZE_TEMPLATES,
+  buildSizesFromTemplate,
+  describeRange,
   isWideSizeRange,
-  type SizeProfileTemplate,
+  shortRange,
+  type SizeTemplate,
 } from '@/server/size-profiles/templates';
 
 type ArticleEntry = SizeProfilesSnapshot['articles'][number];
@@ -60,6 +62,7 @@ export function SizeProfilesCard() {
 
   const articles = snapshotQuery.data?.articles ?? [];
   const profiles = snapshotQuery.data?.profiles ?? [];
+  const ensured = snapshotQuery.data?.ensured;
 
   const profilesByNmId = useMemo(() => {
     const map = new Map<number, SizeProfile[]>();
@@ -68,9 +71,12 @@ export function SizeProfilesCard() {
       arr.push(p);
       map.set(p.nmId, arr);
     }
-    // Default first
     for (const arr of map.values()) {
-      arr.sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0));
+      arr.sort((a, b) => {
+        if (a.isDefault && !b.isDefault) return -1;
+        if (!a.isDefault && b.isDefault) return 1;
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      });
     }
     return map;
   }, [profiles]);
@@ -104,14 +110,18 @@ export function SizeProfilesCard() {
 
   if (!tenantId) return null;
 
+  const summarySuffix = ensured && ensured.profilesCreated > 0
+    ? ` · авто-создано ${ensured.profilesCreated} ${plural(ensured.profilesCreated, 'профиль', 'профиля', 'профилей')}`
+    : '';
+
   return (
     <section className="rounded-3xl border border-border bg-card p-6 shadow-[var(--shadow-xs)]">
       <header className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h3 className="text-[15px] font-extrabold">Ростовки</h3>
-          <p className="mt-0.5 text-[12px] text-muted-foreground">
-            Профили «размер × штук в коробке» для каждого артикула. Один артикул может иметь несколько профилей —
-            например, «Подростковая 37-41» и «Взрослая 41-46».
+          <p className="mt-0.5 max-w-xl text-[12px] text-muted-foreground">
+            Профили «размер × штук в коробке» для каждого артикула. Широкие ряды (например 37-45) автоматически
+            разбиваются на отдельные ростовки «37-41» и «41-45» — как в Постал{summarySuffix}.
           </p>
         </div>
         <div className="relative w-full max-w-xs">
@@ -188,8 +198,17 @@ function ArticleRow({
   onDelete: (id: string) => void;
   onSetDefault: (id: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(profiles.length > 0);
-  const wide = profiles[0] && isWideSizeRange(profiles[0].sizes);
+  const [expanded, setExpanded] = useState(profiles.length > 1);
+  const widest = profiles[0]?.sizes ?? [];
+  const wide = isWideSizeRange(widest);
+
+  const rangeChips = useMemo(() => {
+    const seen = new Set<string>();
+    for (const p of profiles) {
+      for (const s of p.sizes) seen.add(s.size);
+    }
+    return Array.from(seen).sort((a, b) => parseFloat(a) - parseFloat(b));
+  }, [profiles]);
 
   return (
     <div className="rounded-2xl border border-border bg-subtle/30 p-3">
@@ -209,8 +228,10 @@ function ArticleRow({
             {article.category ? <span className="text-[10px] text-muted-foreground">· {article.category}</span> : null}
           </div>
           <div className="mt-0.5 text-[11px] text-muted-foreground">
-            {profiles.length === 0 ? 'Нет профилей' : `Профилей: ${profiles.length}`}
-            {wide ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">⚠ широкий ряд — лучше разделить</span> : null}
+            {profiles.length === 0
+              ? 'Нет профилей (нет истории заказов)'
+              : `${profiles.length} ${plural(profiles.length, 'профиль', 'профиля', 'профилей')} · полный ряд: ${describeRange(rangeChips)}`}
+            {wide ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">⚠ широкий ряд — авто-сплит</span> : null}
           </div>
         </div>
         <button
@@ -237,8 +258,13 @@ function ArticleRow({
           {profiles.map((p) => (
             <div key={p.id} className="flex flex-wrap items-center gap-2 rounded-lg bg-card px-3 py-2 text-[11px]">
               <span className="font-bold text-foreground">{p.name}</span>
+              {p.sourceTemplate ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-2 py-0.5 text-[9.5px] font-extrabold uppercase tracking-wide text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300">
+                  <Sparkles className="h-3 w-3" /> шаблон {p.sourceTemplate}
+                </span>
+              ) : null}
               <span className="text-muted-foreground">·</span>
-              <span className="text-muted-foreground">{p.sizes.length} разм · <strong>{p.totalPerBox}</strong> пар/кор</span>
+              <span className="text-muted-foreground">{shortRange(p.sizes.map((s) => s.size))} · {p.sizes.length} разм · <strong>{p.totalPerBox}</strong> пар/кор</span>
               <span className="text-[10px] text-muted-foreground">
                 {p.sizes.map((s) => `${s.size}×${s.perBox}`).join(' · ')}
               </span>
@@ -291,12 +317,9 @@ function ProfileEditorModal({
 }) {
   const { tenantId } = useStore();
   const [name, setName] = useState(profile?.name ?? '');
-  const [rows, setRows] = useState<SizeProfileSize[]>(
-    profile?.sizes ?? [],
-  );
+  const [rows, setRows] = useState<SizeProfileSize[]>(profile?.sizes ?? []);
   const [error, setError] = useState<string | null>(null);
 
-  // Detected sizes from order history → auto-template
   const detectedQuery = useQuery({
     queryKey: ['detected-sizes', tenantId, article.nmId],
     queryFn: () => detectArticleSizesAction(tenantId!, article.nmId),
@@ -304,11 +327,6 @@ function ProfileEditorModal({
     staleTime: 5 * 60_000,
   });
   const detectedSizes = detectedQuery.data ?? [];
-  const autoTemplate = useMemo(
-    () => mode === 'create' ? buildAutoTemplate(detectedSizes) : null,
-    [mode, detectedSizes],
-  );
-  const [autoApplied, setAutoApplied] = useState(false);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -320,20 +338,10 @@ function ProfileEditorModal({
 
   const totalPerBox = rows.reduce((s, r) => s + (Number(r.perBox) || 0), 0);
 
-  const applyTemplate = (tpl: SizeProfileTemplate) => {
-    setName(tpl.name);
-    setRows(tpl.sizes.map((s) => ({ size: s.size, perBox: s.perBox })));
+  const applyTemplate = (tpl: SizeTemplate) => {
+    setName(`Стандарт ${tpl.name}`);
+    setRows(buildSizesFromTemplate(tpl));
   };
-
-  // Auto-apply the detected template once, when modal opens in "create" mode
-  // and the user hasn't typed anything yet.
-  useEffect(() => {
-    if (autoApplied || mode !== 'create' || !autoTemplate) return;
-    if (rows.length === 0 && !name) {
-      applyTemplate(autoTemplate);
-      setAutoApplied(true);
-    }
-  }, [autoTemplate, autoApplied, mode, rows.length, name]);
 
   const updateRow = (index: number, patch: Partial<SizeProfileSize>) => {
     setRows((prev) => prev.map((r, i) => i === index ? { ...r, ...patch } : r));
@@ -375,64 +383,49 @@ function ProfileEditorModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
-          {/* Auto-template banner — detected sizes from order history */}
-          {mode === 'create' && autoTemplate ? (
+          {/* Detected sizes hint (read-only) */}
+          {mode === 'create' && detectedSizes.length > 0 ? (
             <div className="mb-4 rounded-2xl border border-emerald-300/60 bg-emerald-50 p-3 dark:border-emerald-700/40 dark:bg-emerald-950/30">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-[10.5px] font-black uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
-                    🎯 Авто-шаблон по размерам артикула
-                  </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-1 text-[12.5px] font-bold text-foreground">
-                    <span>Найдены размеры:</span>
-                    {detectedSizes.map((s) => (
-                      <span key={s} className="inline-flex items-center rounded-md bg-card px-1.5 py-0.5 font-mono text-[11px] text-emerald-700 dark:text-emerald-300">
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="mt-1 text-[11px] text-muted-foreground">
-                    Шаблон: <strong>{autoTemplate.name}</strong> · <strong>{autoTemplate.sizes.reduce((s, r) => s + r.perBox, 0)} пар/коробка</strong>
-                    <span className="ml-1.5">{autoTemplate.sizes.map((r) => `${r.size}×${r.perBox}`).join(' · ')}</span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => applyTemplate(autoTemplate)}
-                  className="shrink-0 rounded-lg bg-emerald-500 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-600"
-                >
-                  Применить
-                </button>
+              <div className="text-[10.5px] font-black uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
+                Размеры артикула в истории заказов
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {detectedSizes.map((s) => (
+                  <span key={s} className="inline-flex items-center rounded-md bg-card px-1.5 py-0.5 font-mono text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                    {s}
+                  </span>
+                ))}
               </div>
               <p className="mt-2 text-[10.5px] text-muted-foreground">
-                Правило: центр размерного ряда — по 2 пары, крайние — по 1. Сумма стремится к 8 парам/коробке.
+                Этот артикул уже автоматически получил подходящие профили. Здесь — для создания дополнительного.
               </p>
             </div>
           ) : null}
 
-          {mode === 'create' && detectedQuery.isLoading ? (
-            <div className="mb-4 flex items-center gap-2 rounded-2xl border border-border bg-subtle/40 p-3 text-[12px] text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Определяю размеры артикула по истории заказов…
-            </div>
-          ) : null}
-
-          {/* Templates */}
+          {/* 4 built-in templates */}
           {mode === 'create' ? (
             <div className="mb-4">
-              <div className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">Готовые шаблоны</div>
+              <div className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">
+                Готовые шаблоны Постал
+              </div>
               <div className="flex flex-wrap gap-1.5">
-                {SIZE_PROFILE_TEMPLATES.map((tpl) => (
-                  <button
-                    key={tpl.id}
-                    type="button"
-                    onClick={() => applyTemplate(tpl)}
-                    title={`${SIZE_PROFILE_TEMPLATE_GROUP_LABEL[tpl.group]} · ${tpl.hint}`}
-                    className="rounded-lg border border-border bg-subtle/40 px-2.5 py-1.5 text-[11px] font-bold hover:border-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                  >
-                    {tpl.name}
-                  </button>
-                ))}
+                {SIZE_TEMPLATES.map((tpl) => {
+                  const total = tpl.sizes.reduce((s, sz) => s + (tpl.map[sz] ?? 1), 0);
+                  return (
+                    <button
+                      key={tpl.id}
+                      type="button"
+                      onClick={() => applyTemplate(tpl)}
+                      className="flex flex-col items-start rounded-lg border border-border bg-subtle/40 px-3 py-2 text-left text-[11px] hover:border-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                    >
+                      <strong className="text-[12px] font-extrabold">{tpl.name}</strong>
+                      <span className="font-mono text-[10px] text-muted-foreground">
+                        {tpl.sizes.map((s) => `${s}×${tpl.map[s]}`).join(' · ')}
+                      </span>
+                      <span className="mt-0.5 text-[10px] font-bold text-rose-500">{total} пар/кор</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : null}
@@ -443,7 +436,7 @@ function ProfileEditorModal({
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="напр. Подростковая 37-41"
+              placeholder="напр. Стандарт 41-46 или Подростковая ТН-10"
               className="h-10 w-full rounded-lg border border-border bg-card px-3 text-[13px] outline-none focus:border-rose-400"
             />
           </label>
@@ -551,4 +544,15 @@ function ProfileEditorModal({
       </div>
     </div>
   );
+}
+
+/* ── helpers ───────────────────────────────────── */
+
+function plural(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if (abs > 10 && abs < 20) return many;
+  if (last > 1 && last < 5) return few;
+  if (last === 1) return one;
+  return many;
 }

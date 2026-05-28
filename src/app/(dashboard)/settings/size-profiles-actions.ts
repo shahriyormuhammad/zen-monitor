@@ -6,6 +6,7 @@ import { requireTenantFeatureAccess } from '@/lib/auth/tenant-access';
 import {
   deleteProfile,
   detectArticleSizes,
+  ensureProfilesForTenant,
   listArticleCatalog,
   listProfiles,
   setProfileDefault,
@@ -17,15 +18,26 @@ import {
 export type SizeProfilesSnapshot = {
   articles: Awaited<ReturnType<typeof listArticleCatalog>>;
   profiles: SizeProfile[];
+  /** Stats from the auto-materialisation pass (Постал's ensureDefaultProfile). */
+  ensured: { articlesProcessed: number; profilesCreated: number };
 };
 
+/**
+ * Load the Settings → Ростовки snapshot.
+ *
+ * Side effect: idempotently materialises default + template-split profiles
+ * for every article that has order history (Постал's ensureDefaultProfile
+ * pattern). Wide-range articles (e.g. 37-45) get auto-split into separate
+ * "37-41" and "41-45" profiles without the user lifting a finger.
+ */
 export async function loadSizeProfilesSnapshot(tenantId: string): Promise<SizeProfilesSnapshot> {
   await requireTenantFeatureAccess(tenantId, 'settings');
+  const ensured = await ensureProfilesForTenant(tenantId);
   const [articles, profiles] = await Promise.all([
     listArticleCatalog(tenantId),
     listProfiles(tenantId),
   ]);
-  return { articles, profiles };
+  return { articles, profiles, ensured };
 }
 
 export async function upsertSizeProfileAction(

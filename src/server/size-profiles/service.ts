@@ -1,15 +1,33 @@
 /**
- * Size profiles ("Ростовки") service module.
+ * Size profiles ("Ростовки") service — direct port of Postal's
+ * `ensureDefaultProfile` + family. Three things this module does:
  *
- *   listProfilesByArticle(tenantId)  → article → its profiles
- *   listArticleCatalog(tenantId)     → article catalog with vendorCode + photo
- *   upsertProfile(tenantId, data)    → create/update one profile
- *   deleteProfile(tenantId, id)      → delete (unless isDefault)
+ *   1. `listProfiles(tenantId)`         — load all profiles
+ *   2. `listArticleCatalog(tenantId)`   — products + photo for the picker
+ *   3. `ensureProfilesForArticle()`     — idempotently materialise default
+ *      and template-based profiles for one nmId (the wide-range split)
+ *   4. CRUD: `upsertProfile`, `deleteProfile`, `setProfileDefault`
+ *   5. `detectArticleSizes` — distinct sizes from order history (fallback
+ *      until we sync the WB Content API into a dedicated `product_sizes`
+ *      table)
+ *
+ * The whole point of `ensureProfilesForArticle` is to make widely-ranged
+ * articles (e.g. 37-45) **auto-split** into multiple profiles: the user
+ * doesn't pick a template — the system creates "37-41" AND "41-45"
+ * profiles automatically on first page load. This is what the user
+ * referred to as "разделить обувной артикул на 2 полноценные ростовки".
  */
 
 import { and, eq, sql } from 'drizzle-orm';
 import { db, withTenantContext } from '@/lib/db';
 import { sizeProfiles, type SizeProfileSize } from '@/lib/db/schema';
+import {
+  buildSizesFromTemplate,
+  findApplicableTemplates,
+  findExactTemplate,
+  sortSizesByValue,
+  type SizeTemplate,
+} from './templates';
 
 export type SizeProfile = {
   id: string;
@@ -20,6 +38,7 @@ export type SizeProfile = {
   sizes: SizeProfileSize[];
   totalPerBox: number;
   isDefault: boolean;
+  sourceTemplate: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -41,39 +60,8 @@ export type ArticleCatalogEntry = {
   photoUrl: string | null;
 };
 
-/**
- * Detect which sizes a given article actually ships in, based on the
- * tech_size column of historical orders. Returns sizes sorted numerically
- * where possible, falling back to lexical order for non-numeric labels.
- */
-export async function detectArticleSizes(
-  tenantId: string,
-  nmId: number,
-): Promise<string[]> {
-  return withTenantContext(db, tenantId, async (tx) => {
-    const result = await tx.execute(sql`
-      SELECT DISTINCT tech_size
-      FROM raw_api_orders
-      WHERE tenant_id = ${tenantId}
-        AND nm_id = ${nmId}
-        AND tech_size IS NOT NULL
-        AND tech_size <> ''
-        AND tech_size <> '0'
-    `);
-    const rows = result as unknown as Array<{ tech_size: string }>;
-    return rows
-      .map((r) => r.tech_size.trim())
-      .filter((s) => s.length > 0)
-      .sort((a, b) => {
-        const an = parseFloat(a);
-        const bn = parseFloat(b);
-        if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
-        return a.localeCompare(b, 'ru');
-      });
-  });
-}
+/* ─────────────── Article catalogue ─────────────── */
 
-/** Article catalogue from the products table (sync-fed). */
 export async function listArticleCatalog(tenantId: string): Promise<ArticleCatalogEntry[]> {
   return withTenantContext(db, tenantId, async (tx) => {
     const result = await tx.execute(sql`
@@ -106,6 +94,67 @@ export async function listArticleCatalog(tenantId: string): Promise<ArticleCatal
     }));
   });
 }
+
+/**
+ * Detect which sizes a given article actually ships in. Postal pulls this
+ * from `irp_nomenclature_v1` (WB Content API cache). We don't have that
+ * synced yet — fall back to distinct tech_size values from order history.
+ *
+ * Barcodes are not available here; profiles materialised from this source
+ * will have empty barcode fields until WB Content API sync is added.
+ */
+export async function detectArticleSizes(
+  tenantId: string,
+  nmId: number,
+): Promise<string[]> {
+  return withTenantContext(db, tenantId, async (tx) => {
+    const result = await tx.execute(sql`
+      SELECT DISTINCT tech_size
+      FROM raw_api_orders
+      WHERE tenant_id = ${tenantId}
+        AND nm_id = ${nmId}
+        AND tech_size IS NOT NULL
+        AND tech_size <> ''
+        AND tech_size <> '0'
+    `);
+    const rows = result as unknown as Array<{ tech_size: string }>;
+    return sortSizesByValue(rows.map((r) => r.tech_size.trim()).filter((s) => s.length > 0));
+  });
+}
+
+/** Bulk-detect sizes for many nmIds in one query — used by the snapshot loader. */
+export async function detectSizesForMany(
+  tenantId: string,
+  nmIds: number[],
+): Promise<Map<number, string[]>> {
+  const map = new Map<number, string[]>();
+  if (nmIds.length === 0) return map;
+  return withTenantContext(db, tenantId, async (tx) => {
+    const result = await tx.execute(sql`
+      SELECT nm_id::text AS nm_id, tech_size
+      FROM raw_api_orders
+      WHERE tenant_id = ${tenantId}
+        AND nm_id = ANY(${nmIds}::bigint[])
+        AND tech_size IS NOT NULL
+        AND tech_size <> ''
+        AND tech_size <> '0'
+      GROUP BY nm_id, tech_size
+    `);
+    const rows = result as unknown as Array<{ nm_id: string; tech_size: string }>;
+    for (const r of rows) {
+      const nm = Number(r.nm_id);
+      const list = map.get(nm) ?? [];
+      list.push(r.tech_size.trim());
+      map.set(nm, list);
+    }
+    for (const [nm, list] of map.entries()) {
+      map.set(nm, sortSizesByValue(list));
+    }
+    return map;
+  });
+}
+
+/* ─────────────── Profiles list / CRUD ─────────────── */
 
 export async function listProfiles(tenantId: string): Promise<SizeProfile[]> {
   return withTenantContext(db, tenantId, async (tx) => {
@@ -156,7 +205,6 @@ export async function upsertProfile(
       return toSizeProfile(updated);
     }
 
-    // If this is the first profile for the article, mark it default.
     const existing = await tx
       .select({ id: sizeProfiles.id })
       .from(sizeProfiles)
@@ -176,6 +224,7 @@ export async function upsertProfile(
         sizes: cleanSizes,
         totalPerBox: total,
         isDefault: input.isDefault ?? existing.length === 0,
+        sourceTemplate: null,
       })
       .returning();
     return toSizeProfile(created!);
@@ -208,8 +257,6 @@ export async function setProfileDefault(tenantId: string, id: string): Promise<v
       .limit(1);
     if (!row[0]) throw new Error('Профиль не найден');
     const nmId = row[0].nmId;
-
-    // Reset isDefault for every profile of this nmId, then set on the picked one.
     await tx
       .update(sizeProfiles)
       .set({ isDefault: false, updatedAt: new Date() })
@@ -221,6 +268,158 @@ export async function setProfileDefault(tenantId: string, id: string): Promise<v
   });
 }
 
+/* ─────────────── Materialisation (the Postal ensureDefaultProfile port) ─────────────── */
+
+/**
+ * Build (in memory) the set of profiles that should exist for an article
+ * given its detected sizes. Mirrors Postal's `ensureDefaultProfile`:
+ *
+ *   • exact match → ONE profile «Стандарт <name>» with template perBox map
+ *   • applicable but not exact → fallback «Стандарт» (all perBox=1) +
+ *     ONE profile per applicable template («37-41», «41-45», …)
+ *   • no applicable templates → just the fallback «Стандарт»
+ */
+type DesiredProfile = {
+  name: string;
+  sizes: SizeProfileSize[];
+  totalPerBox: number;
+  isDefault: boolean;
+  sourceTemplate: string | null;
+};
+
+function planProfilesForArticle(articleSizes: string[]): DesiredProfile[] {
+  if (articleSizes.length === 0) return [];
+  const applicable = findApplicableTemplates(articleSizes);
+  const exact = findExactTemplate(articleSizes);
+
+  if (exact) {
+    const sizes = buildSizesFromTemplate(exact);
+    return [{
+      name: `Стандарт ${exact.name}`,
+      sizes,
+      totalPerBox: sizes.reduce((s, r) => s + r.perBox, 0),
+      isDefault: true,
+      sourceTemplate: exact.id,
+    }];
+  }
+
+  // No exact match — fallback Стандарт with perBox=1 each.
+  const standard: DesiredProfile = {
+    name: 'Стандарт',
+    sizes: articleSizes.map((s) => ({ size: s, perBox: 1 })),
+    totalPerBox: articleSizes.length,
+    isDefault: true,
+    sourceTemplate: null,
+  };
+
+  if (applicable.length === 0) {
+    return [standard];
+  }
+
+  // Wide range — auto-split: one extra profile per applicable template.
+  const extras: DesiredProfile[] = applicable.map((tpl: SizeTemplate) => {
+    const sizes = buildSizesFromTemplate(tpl);
+    return {
+      name: tpl.name,
+      sizes,
+      totalPerBox: sizes.reduce((s, r) => s + r.perBox, 0),
+      isDefault: false,
+      sourceTemplate: tpl.id,
+    };
+  });
+
+  return [standard, ...extras];
+}
+
+/**
+ * Idempotent: ensure every desired profile exists for the article.
+ * Will NEVER overwrite a user-modified profile — checks by
+ * `(nmId, sourceTemplate)` (or `(nmId, isDefault=true, sourceTemplate IS NULL)`
+ * for the fallback Стандарт).
+ *
+ * Returns the number of profiles created.
+ */
+export async function ensureProfilesForArticle(
+  tenantId: string,
+  nmId: number,
+  vendorCode: string,
+  detectedSizes: string[],
+): Promise<number> {
+  const desired = planProfilesForArticle(detectedSizes);
+  if (desired.length === 0) return 0;
+
+  return withTenantContext(db, tenantId, async (tx) => {
+    const existing = await tx
+      .select({
+        id: sizeProfiles.id,
+        sourceTemplate: sizeProfiles.sourceTemplate,
+        isDefault: sizeProfiles.isDefault,
+      })
+      .from(sizeProfiles)
+      .where(and(
+        eq(sizeProfiles.tenantId, tenantId),
+        eq(sizeProfiles.nmId, nmId),
+      ));
+
+    const existingByTemplate = new Set<string>();
+    let hasFallbackStandard = false;
+    for (const row of existing) {
+      if (row.sourceTemplate) {
+        existingByTemplate.add(row.sourceTemplate);
+      } else if (row.isDefault) {
+        hasFallbackStandard = true;
+      }
+    }
+
+    let created = 0;
+    for (const profile of desired) {
+      if (profile.sourceTemplate) {
+        if (existingByTemplate.has(profile.sourceTemplate)) continue;
+      } else if (profile.isDefault) {
+        // Fallback Стандарт: skip if any default profile already exists.
+        if (hasFallbackStandard || existing.some((r) => r.isDefault)) continue;
+      }
+      await tx.insert(sizeProfiles).values({
+        tenantId,
+        nmId,
+        vendorCode,
+        name: profile.name,
+        sizes: profile.sizes,
+        totalPerBox: profile.totalPerBox,
+        isDefault: profile.isDefault,
+        sourceTemplate: profile.sourceTemplate,
+      });
+      created += 1;
+    }
+    return created;
+  });
+}
+
+/**
+ * Materialise profiles for every article in the tenant's catalogue using
+ * the detected sizes from order history. Returns total created count.
+ */
+export async function ensureProfilesForTenant(tenantId: string): Promise<{
+  articlesProcessed: number;
+  profilesCreated: number;
+}> {
+  const articles = await listArticleCatalog(tenantId);
+  if (articles.length === 0) return { articlesProcessed: 0, profilesCreated: 0 };
+
+  const sizesByNm = await detectSizesForMany(tenantId, articles.map((a) => a.nmId));
+
+  let created = 0;
+  for (const article of articles) {
+    const sizes = sizesByNm.get(article.nmId) ?? [];
+    if (sizes.length === 0) continue; // no order history → skip
+    const n = await ensureProfilesForArticle(tenantId, article.nmId, article.vendorCode, sizes);
+    created += n;
+  }
+  return { articlesProcessed: articles.length, profilesCreated: created };
+}
+
+/* ─────────────── helpers ─────────────── */
+
 function toSizeProfile(row: typeof sizeProfiles.$inferSelect): SizeProfile {
   return {
     id: row.id,
@@ -231,6 +430,7 @@ function toSizeProfile(row: typeof sizeProfiles.$inferSelect): SizeProfile {
     sizes: Array.isArray(row.sizes) ? row.sizes : [],
     totalPerBox: row.totalPerBox,
     isDefault: row.isDefault,
+    sourceTemplate: row.sourceTemplate ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
