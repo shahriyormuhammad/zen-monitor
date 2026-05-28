@@ -139,6 +139,20 @@ export function SizeProfilesCard() {
         <div className="flex h-32 items-center justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-rose-500" />
         </div>
+      ) : snapshotQuery.error ? (
+        <div className="rounded-2xl border border-rose-300 bg-rose-50 p-6 text-[12px] text-rose-700 dark:border-rose-700/40 dark:bg-rose-950/40 dark:text-rose-300">
+          <strong className="block">Не удалось загрузить ростовки.</strong>
+          <span className="mt-1 block font-mono text-[11px]">
+            {snapshotQuery.error instanceof Error ? snapshotQuery.error.message : String(snapshotQuery.error)}
+          </span>
+          <button
+            type="button"
+            onClick={() => snapshotQuery.refetch()}
+            className="mt-3 rounded-lg border border-rose-300 bg-card px-3 py-1.5 text-[12px] font-bold text-rose-700 hover:bg-rose-100 dark:bg-transparent"
+          >
+            Повторить
+          </button>
+        </div>
       ) : articles.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border bg-subtle/40 p-8 text-center text-[12px] text-muted-foreground">
           Пока нет товаров. Подключи кабинет WB в блоке выше и дождись синхронизации — каждая карточка получит свой профиль ростовки.

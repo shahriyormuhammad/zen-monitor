@@ -32,7 +32,17 @@ export type SizeProfilesSnapshot = {
  */
 export async function loadSizeProfilesSnapshot(tenantId: string): Promise<SizeProfilesSnapshot> {
   await requireTenantFeatureAccess(tenantId, 'settings');
-  const ensured = await ensureProfilesForTenant(tenantId);
+
+  // Materialisation is best-effort: never let it block the snapshot. If
+  // detection or insert fails (e.g. transient DB issue, weird tech_size
+  // values), the user should still see their existing profiles.
+  let ensured = { articlesProcessed: 0, profilesCreated: 0 };
+  try {
+    ensured = await ensureProfilesForTenant(tenantId);
+  } catch (error) {
+    console.error('[size-profiles] ensureProfilesForTenant failed', error);
+  }
+
   const [articles, profiles] = await Promise.all([
     listArticleCatalog(tenantId),
     listProfiles(tenantId),

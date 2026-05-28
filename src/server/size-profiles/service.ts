@@ -130,11 +130,14 @@ export async function detectSizesForMany(
   const map = new Map<number, string[]>();
   if (nmIds.length === 0) return map;
   return withTenantContext(db, tenantId, async (tx) => {
+    // drizzle/postgres-js serialises JS arrays as records, so ANY(::bigint[])
+    // breaks with "cannot cast type record to bigint[]". Use sql.join + IN.
+    const nmIdList = sql.join(nmIds.map((nm) => sql`${nm}::bigint`), sql`, `);
     const result = await tx.execute(sql`
       SELECT nm_id::text AS nm_id, tech_size
       FROM raw_api_orders
       WHERE tenant_id = ${tenantId}
-        AND nm_id = ANY(${nmIds}::bigint[])
+        AND nm_id IN (${nmIdList})
         AND tech_size IS NOT NULL
         AND tech_size <> ''
         AND tech_size <> '0'
