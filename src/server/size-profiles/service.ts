@@ -96,18 +96,43 @@ export async function listArticleCatalog(tenantId: string): Promise<ArticleCatal
 }
 
 /**
- * Detect which sizes a given article actually ships in. Postal pulls this
- * from `irp_nomenclature_v1` (WB Content API cache). We don't have that
- * synced yet — fall back to distinct tech_size values from order history.
+ * Detect which sizes a given article ships in.
  *
- * Barcodes are not available here; profiles materialised from this source
- * will have empty barcode fields until WB Content API sync is added.
+ *   1. Preferred: `product_sizes` table — populated by the WB Content API
+ *      sync (`syncProductSizes`). Includes barcodes per size.
+ *   2. Fallback: distinct tech_size values from `raw_api_orders`. No
+ *      barcodes, and missing sizes that haven't shipped yet.
+ *
+ * The Settings card has a "Подтянуть размеры из WB" button that triggers
+ * the sync — once it runs, this function returns the full size set with
+ * barcodes attached.
  */
+export type DetectedSize = { size: string; barcode: string };
+
 export async function detectArticleSizes(
   tenantId: string,
   nmId: number,
-): Promise<string[]> {
+): Promise<DetectedSize[]> {
   return withTenantContext(db, tenantId, async (tx) => {
+    // Primary source — WB Content API synced rows.
+    const synced = await tx.execute(sql`
+      SELECT tech_size, MAX(barcode) AS barcode
+      FROM product_sizes
+      WHERE tenant_id = ${tenantId}
+        AND nm_id = ${nmId}
+      GROUP BY tech_size
+    `);
+    const syncedRows = synced as unknown as Array<{ tech_size: string; barcode: string | null }>;
+    if (syncedRows.length > 0) {
+      const list = syncedRows
+        .map((r) => ({ size: r.tech_size.trim(), barcode: (r.barcode ?? '').trim() }))
+        .filter((r) => r.size.length > 0 && r.size !== '0');
+      return sortSizesByValue(list.map((r) => r.size))
+        .map((s) => list.find((r) => r.size === s)!)
+        .filter(Boolean);
+    }
+
+    // Fallback — order history (sizes only, no barcodes).
     const result = await tx.execute(sql`
       SELECT DISTINCT tech_size
       FROM raw_api_orders
@@ -118,7 +143,8 @@ export async function detectArticleSizes(
         AND tech_size <> '0'
     `);
     const rows = result as unknown as Array<{ tech_size: string }>;
-    return sortSizesByValue(rows.map((r) => r.tech_size.trim()).filter((s) => s.length > 0));
+    return sortSizesByValue(rows.map((r) => r.tech_size.trim()).filter((s) => s.length > 0))
+      .map((size) => ({ size, barcode: '' }));
   });
 }
 
@@ -126,32 +152,59 @@ export async function detectArticleSizes(
 export async function detectSizesForMany(
   tenantId: string,
   nmIds: number[],
-): Promise<Map<number, string[]>> {
-  const map = new Map<number, string[]>();
+): Promise<Map<number, DetectedSize[]>> {
+  const map = new Map<number, DetectedSize[]>();
   if (nmIds.length === 0) return map;
   return withTenantContext(db, tenantId, async (tx) => {
-    // drizzle/postgres-js serialises JS arrays as records, so ANY(::bigint[])
-    // breaks with "cannot cast type record to bigint[]". Use sql.join + IN.
     const nmIdList = sql.join(nmIds.map((nm) => sql`${nm}::bigint`), sql`, `);
-    const result = await tx.execute(sql`
-      SELECT nm_id::text AS nm_id, tech_size
-      FROM raw_api_orders
+
+    // Primary source — product_sizes (synced from WB Content API).
+    const syncedResult = await tx.execute(sql`
+      SELECT nm_id::text AS nm_id, tech_size, MAX(barcode) AS barcode
+      FROM product_sizes
       WHERE tenant_id = ${tenantId}
         AND nm_id IN (${nmIdList})
-        AND tech_size IS NOT NULL
-        AND tech_size <> ''
-        AND tech_size <> '0'
       GROUP BY nm_id, tech_size
     `);
-    const rows = result as unknown as Array<{ nm_id: string; tech_size: string }>;
-    for (const r of rows) {
+    const syncedRows = syncedResult as unknown as Array<{ nm_id: string; tech_size: string; barcode: string | null }>;
+    const synced = new Map<number, DetectedSize[]>();
+    for (const r of syncedRows) {
       const nm = Number(r.nm_id);
-      const list = map.get(nm) ?? [];
-      list.push(r.tech_size.trim());
-      map.set(nm, list);
+      const list = synced.get(nm) ?? [];
+      list.push({ size: r.tech_size.trim(), barcode: (r.barcode ?? '').trim() });
+      synced.set(nm, list);
     }
-    for (const [nm, list] of map.entries()) {
-      map.set(nm, sortSizesByValue(list));
+    for (const [nm, list] of synced.entries()) {
+      const sorted = sortSizesByValue(list.map((r) => r.size));
+      synced.set(nm, sorted.map((s) => list.find((r) => r.size === s)!).filter(Boolean));
+      map.set(nm, synced.get(nm)!);
+    }
+
+    // For nmIds without synced rows, fall back to order history.
+    const missing = nmIds.filter((nm) => !synced.has(nm));
+    if (missing.length > 0) {
+      const missingList = sql.join(missing.map((nm) => sql`${nm}::bigint`), sql`, `);
+      const ordersResult = await tx.execute(sql`
+        SELECT nm_id::text AS nm_id, tech_size
+        FROM raw_api_orders
+        WHERE tenant_id = ${tenantId}
+          AND nm_id IN (${missingList})
+          AND tech_size IS NOT NULL
+          AND tech_size <> ''
+          AND tech_size <> '0'
+        GROUP BY nm_id, tech_size
+      `);
+      const rows = ordersResult as unknown as Array<{ nm_id: string; tech_size: string }>;
+      const buckets = new Map<number, string[]>();
+      for (const r of rows) {
+        const nm = Number(r.nm_id);
+        const list = buckets.get(nm) ?? [];
+        list.push(r.tech_size.trim());
+        buckets.set(nm, list);
+      }
+      for (const [nm, list] of buckets.entries()) {
+        map.set(nm, sortSizesByValue(list).map((size) => ({ size, barcode: '' })));
+      }
     }
     return map;
   });
@@ -290,13 +343,19 @@ type DesiredProfile = {
   sourceTemplate: string | null;
 };
 
-function planProfilesForArticle(articleSizes: string[]): DesiredProfile[] {
-  if (articleSizes.length === 0) return [];
+function planProfilesForArticle(detected: DetectedSize[]): DesiredProfile[] {
+  if (detected.length === 0) return [];
+  const articleSizes = detected.map((s) => s.size);
+  const barcodeBySize: Record<string, string> = {};
+  for (const s of detected) {
+    if (s.barcode) barcodeBySize[s.size] = s.barcode;
+  }
+
   const applicable = findApplicableTemplates(articleSizes);
   const exact = findExactTemplate(articleSizes);
 
   if (exact) {
-    const sizes = buildSizesFromTemplate(exact);
+    const sizes = buildSizesFromTemplate(exact, barcodeBySize);
     return [{
       name: `Стандарт ${exact.name}`,
       sizes,
@@ -306,11 +365,16 @@ function planProfilesForArticle(articleSizes: string[]): DesiredProfile[] {
     }];
   }
 
-  // No exact match — fallback Стандарт with perBox=1 each.
+  // No exact match — fallback Стандарт with perBox=1 each (barcodes attached
+  // when known).
   const standard: DesiredProfile = {
     name: 'Стандарт',
-    sizes: articleSizes.map((s) => ({ size: s, perBox: 1 })),
-    totalPerBox: articleSizes.length,
+    sizes: detected.map((s) => ({
+      size: s.size,
+      perBox: 1,
+      barcode: s.barcode || undefined,
+    })),
+    totalPerBox: detected.length,
     isDefault: true,
     sourceTemplate: null,
   };
@@ -321,7 +385,7 @@ function planProfilesForArticle(articleSizes: string[]): DesiredProfile[] {
 
   // Wide range — auto-split: one extra profile per applicable template.
   const extras: DesiredProfile[] = applicable.map((tpl: SizeTemplate) => {
-    const sizes = buildSizesFromTemplate(tpl);
+    const sizes = buildSizesFromTemplate(tpl, barcodeBySize);
     return {
       name: tpl.name,
       sizes,
@@ -346,7 +410,7 @@ export async function ensureProfilesForArticle(
   tenantId: string,
   nmId: number,
   vendorCode: string,
-  detectedSizes: string[],
+  detectedSizes: DetectedSize[],
 ): Promise<number> {
   const desired = planProfilesForArticle(detectedSizes);
   if (desired.length === 0) return 0;
@@ -419,6 +483,32 @@ export async function ensureProfilesForTenant(tenantId: string): Promise<{
     created += n;
   }
   return { articlesProcessed: articles.length, profilesCreated: created };
+}
+
+/**
+ * Delete all auto-generated profiles for one article (those with
+ * `sourceTemplate IS NOT NULL` OR the fallback default «Стандарт»). Manually
+ * created profiles are kept. Then re-run `ensureProfilesForArticle` so the
+ * latest WB Content API sizes/barcodes are used.
+ */
+export async function rebuildProfilesForArticle(
+  tenantId: string,
+  nmId: number,
+  vendorCode: string,
+): Promise<{ deleted: number; created: number }> {
+  const detected = await detectArticleSizes(tenantId, nmId);
+  const deleted = await withTenantContext(db, tenantId, async (tx) => {
+    const result = await tx.execute(sql`
+      DELETE FROM size_profiles
+      WHERE tenant_id = ${tenantId}
+        AND nm_id = ${nmId}
+        AND (source_template IS NOT NULL OR (is_default = true AND name LIKE 'Стандарт%'))
+      RETURNING id
+    `);
+    return Array.isArray(result) ? result.length : 0;
+  });
+  const created = await ensureProfilesForArticle(tenantId, nmId, vendorCode, detected);
+  return { deleted, created };
 }
 
 /* ─────────────── helpers ─────────────── */

@@ -2110,3 +2110,22 @@ export const sizeProfiles = pgTable('size_profiles', {
   sizeProfilesTenantVcIdx: index('size_profiles_tenant_vc_idx').on(table.tenantId, table.vendorCode),
   sizeProfilesTenantNmTemplateIdx: index('size_profiles_tenant_nm_template_idx').on(table.tenantId, table.nmId, table.sourceTemplate),
 }));
+
+/**
+ * Per-size catalogue pulled from WB Content API (/content/v2/get/cards/list).
+ * Each row pairs a tech_size with its skus[] barcode so size profiles can
+ * fill barcodes automatically. One nm_id can have several rows if the size
+ * has more than one barcode (rare but allowed by WB).
+ */
+export const productSizes = pgTable('product_sizes', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  nmId: bigint('nm_id', { mode: 'number' }).notNull(),
+  techSize: varchar('tech_size', { length: 64 }).notNull(),
+  barcode: varchar('barcode', { length: 255 }).notNull(),
+  chrtId: bigint('chrt_id', { mode: 'number' }),
+  syncedAt: timestamp('synced_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  productSizesUniqueIdx: uniqueIndex('product_sizes_unique_idx').on(table.tenantId, table.nmId, table.techSize, table.barcode),
+  productSizesTenantNmIdx: index('product_sizes_tenant_nm_idx').on(table.tenantId, table.nmId),
+}));

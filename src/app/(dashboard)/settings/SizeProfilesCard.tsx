@@ -16,8 +16,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  CheckCircle2, ChevronDown, ChevronUp, Loader2, Pencil,
-  Plus, Search, Sparkles, Star, Trash2, X,
+  CheckCircle2, ChevronDown, ChevronUp, Download, Loader2, Pencil,
+  Plus, RefreshCw, Search, Sparkles, Star, Trash2, X,
 } from 'lucide-react';
 
 import { useStore } from '@/store/useStore';
@@ -25,7 +25,9 @@ import {
   deleteSizeProfileAction,
   detectArticleSizesAction,
   loadSizeProfilesSnapshot,
+  rebuildProfilesForArticleAction,
   setSizeProfileDefaultAction,
+  syncProductSizesAction,
   upsertSizeProfileAction,
   type SizeProfilesSnapshot,
 } from './size-profiles-actions';
@@ -108,6 +110,30 @@ export function SizeProfilesCard() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['size-profiles-snapshot', tenantId] }),
   });
 
+  const [syncMessage, setSyncMessage] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      if (!tenantId) throw new Error('Не выбран кабинет');
+      return syncProductSizesAction(tenantId);
+    },
+    onSuccess: (summary) => {
+      setSyncMessage({
+        tone: 'ok',
+        text: `Загружено ${summary.cardsFetched} карточек · ${summary.rowsInserted} размеров (${summary.nmIdsWithSizes} артикулов с размерами) за ${(summary.durationMs / 1000).toFixed(1)} с. Перезапускаю авто-материализацию…`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['size-profiles-snapshot', tenantId] });
+    },
+    onError: (e) => setSyncMessage({ tone: 'err', text: e instanceof Error ? e.message : String(e) }),
+  });
+
+  const rebuildMutation = useMutation({
+    mutationFn: async (args: { nmId: number; vendorCode: string }) => {
+      if (!tenantId) throw new Error('Не выбран кабинет');
+      return rebuildProfilesForArticleAction(tenantId, args.nmId, args.vendorCode);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['size-profiles-snapshot', tenantId] }),
+  });
+
   if (!tenantId) return null;
 
   const summarySuffix = ensured && ensured.profilesCreated > 0
@@ -124,16 +150,38 @@ export function SizeProfilesCard() {
             разбиваются на отдельные ростовки «37-41» и «41-45» — как в Постал{summarySuffix}.
           </p>
         </div>
-        <div className="relative w-full max-w-xs">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск по vendorCode, nmId, бренду…"
-            className="h-9 w-full rounded-lg border border-border bg-card pl-9 pr-3 text-[12px] outline-none focus:border-rose-400"
-          />
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { setSyncMessage(null); syncMutation.mutate(); }}
+            disabled={syncMutation.isPending}
+            title="Загрузить размеры и штрихкоды каждого товара из WB Content API. После — нажми «Пересоздать» у нужного артикула."
+            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-700/40 dark:bg-emerald-950/40 dark:text-emerald-200"
+          >
+            {syncMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            Подтянуть размеры из WB
+          </button>
+          <div className="relative w-full max-w-xs">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Поиск по vendorCode, nmId, бренду…"
+              className="h-9 w-full rounded-lg border border-border bg-card pl-9 pr-3 text-[12px] outline-none focus:border-rose-400"
+            />
+          </div>
         </div>
       </header>
+
+      {syncMessage ? (
+        <div className={`mb-3 rounded-xl border px-3 py-2 text-[12px] ${
+          syncMessage.tone === 'ok'
+            ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-700/40 dark:bg-emerald-950/30 dark:text-emerald-200'
+            : 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-700/40 dark:bg-rose-950/40 dark:text-rose-300'
+        }`}>
+          {syncMessage.text}
+        </div>
+      ) : null}
 
       {snapshotQuery.isLoading ? (
         <div className="flex h-32 items-center justify-center">
@@ -174,6 +222,12 @@ export function SizeProfilesCard() {
                 if (window.confirm('Удалить этот профиль?')) deleteMutation.mutate(id);
               }}
               onSetDefault={(id) => setDefaultMutation.mutate(id)}
+              onRebuild={() => {
+                if (window.confirm('Удалить автогенерированные профили этого артикула и создать новые по актуальным размерам?')) {
+                  rebuildMutation.mutate({ nmId: article.nmId, vendorCode: article.vendorCode });
+                }
+              }}
+              rebuilding={rebuildMutation.isPending && rebuildMutation.variables?.nmId === article.nmId}
             />
           ))}
           {filteredArticles.length > 200 ? (
@@ -203,7 +257,7 @@ export function SizeProfilesCard() {
 /* ── Article row ───────────────────────────────── */
 
 function ArticleRow({
-  article, profiles, onCreate, onEdit, onDelete, onSetDefault,
+  article, profiles, onCreate, onEdit, onDelete, onSetDefault, onRebuild, rebuilding,
 }: {
   article: ArticleEntry;
   profiles: SizeProfile[];
@@ -211,6 +265,8 @@ function ArticleRow({
   onEdit: (p: SizeProfile) => void;
   onDelete: (id: string) => void;
   onSetDefault: (id: string) => void;
+  onRebuild: () => void;
+  rebuilding: boolean;
 }) {
   const [expanded, setExpanded] = useState(profiles.length > 1);
   const widest = profiles[0]?.sizes ?? [];
@@ -248,6 +304,16 @@ function ArticleRow({
             {wide ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">⚠ широкий ряд — авто-сплит</span> : null}
           </div>
         </div>
+        <button
+          type="button"
+          onClick={onRebuild}
+          disabled={rebuilding}
+          title="Удалить автогенерированные профили и пересоздать по актуальным размерам/баркодам из WB"
+          className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1.5 text-[11px] font-bold text-muted-foreground hover:border-rose-400 hover:text-foreground disabled:opacity-50"
+        >
+          {rebuilding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          Пересоздать
+        </button>
         <button
           type="button"
           onClick={onCreate}

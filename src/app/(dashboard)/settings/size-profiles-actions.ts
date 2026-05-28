@@ -9,11 +9,13 @@ import {
   ensureProfilesForTenant,
   listArticleCatalog,
   listProfiles,
+  rebuildProfilesForArticle,
   setProfileDefault,
   upsertProfile,
   type SizeProfile,
   type SizeProfileInput,
 } from '@/server/size-profiles/service';
+import { syncProductSizes, type ProductSizesSyncSummary } from '@/server/size-profiles/sync';
 
 export type SizeProfilesSnapshot = {
   articles: Awaited<ReturnType<typeof listArticleCatalog>>;
@@ -77,5 +79,34 @@ export async function setSizeProfileDefaultAction(tenantId: string, id: string):
 
 export async function detectArticleSizesAction(tenantId: string, nmId: number): Promise<string[]> {
   await requireTenantFeatureAccess(tenantId, 'settings');
-  return detectArticleSizes(tenantId, nmId);
+  const sizes = await detectArticleSizes(tenantId, nmId);
+  return sizes.map((s) => s.size);
+}
+
+/**
+ * Pull size catalogue (tech_size + barcode) for every product from WB
+ * Content API. After it runs, profiles get the barcodes baked in.
+ */
+export async function syncProductSizesAction(tenantId: string): Promise<ProductSizesSyncSummary> {
+  await requireTenantFeatureAccess(tenantId, 'settings', ['owner', 'admin', 'manager']);
+  const summary = await syncProductSizes(tenantId);
+  revalidatePath('/settings');
+  return summary;
+}
+
+/**
+ * Wipe auto-generated profiles for one article and rebuild them from the
+ * latest detected sizes/barcodes. Used by the "Пересоздать" button on each
+ * article row when the user wants to re-pull a fresh template.
+ */
+export async function rebuildProfilesForArticleAction(
+  tenantId: string,
+  nmId: number,
+  vendorCode: string,
+): Promise<{ deleted: number; created: number }> {
+  await requireTenantFeatureAccess(tenantId, 'settings', ['owner', 'admin', 'manager']);
+  const result = await rebuildProfilesForArticle(tenantId, nmId, vendorCode);
+  revalidatePath('/settings');
+  revalidatePath('/supply');
+  return result;
 }
