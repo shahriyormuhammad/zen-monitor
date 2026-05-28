@@ -121,9 +121,9 @@ export function InvoiceTab({ tenantId }: { tenantId: string }) {
           ))}
         </datalist>
 
-        <div className="mt-3 flex flex-col gap-1">
+        <div className="mt-3 flex max-w-[520px] flex-col gap-1">
           {rows.map((row, idx) => (
-            <div key={row.id} className="grid items-center gap-1.5 sm:grid-cols-[28px_minmax(0,1fr)_90px_28px]">
+            <div key={row.id} className="grid items-center gap-1.5 grid-cols-[28px_minmax(0,1fr)_70px_28px]">
               <span className="text-[10px] font-bold text-muted-foreground">#{idx + 1}</span>
               <input
                 value={row.article}
