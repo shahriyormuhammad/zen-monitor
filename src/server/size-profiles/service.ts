@@ -392,6 +392,7 @@ export async function ensureProfilesForArticle(
     const existing = await tx
       .select({
         id: sizeProfiles.id,
+        name: sizeProfiles.name,
         sourceTemplate: sizeProfiles.sourceTemplate,
         isDefault: sizeProfiles.isDefault,
       })
@@ -406,19 +407,37 @@ export async function ensureProfilesForArticle(
     for (const row of existing) {
       if (row.sourceTemplate) {
         existingByTemplate.add(row.sourceTemplate);
-      } else if (row.isDefault) {
+      } else if (row.isDefault && row.name.startsWith('Стандарт')) {
         hasFallbackStandard = true;
       }
     }
 
     let created = 0;
+    let demotedExistingDefault = false;
     for (const profile of desired) {
       if (profile.sourceTemplate) {
         if (existingByTemplate.has(profile.sourceTemplate)) continue;
       } else if (profile.isDefault) {
         // Fallback Стандарт: skip if any default profile already exists.
-        if (hasFallbackStandard || existing.some((r) => r.isDefault)) continue;
+        if (hasFallbackStandard) continue;
       }
+
+      // If this new profile is going to be the default, make sure no other
+      // profile for the same nmId stays default — only one default per
+      // article. Do this exactly once per ensure() call so manual defaults
+      // also get demoted gracefully.
+      if (profile.isDefault && !demotedExistingDefault) {
+        await tx
+          .update(sizeProfiles)
+          .set({ isDefault: false, updatedAt: new Date() })
+          .where(and(
+            eq(sizeProfiles.tenantId, tenantId),
+            eq(sizeProfiles.nmId, nmId),
+            eq(sizeProfiles.isDefault, true),
+          ));
+        demotedExistingDefault = true;
+      }
+
       await tx.insert(sizeProfiles).values({
         tenantId,
         nmId,
@@ -471,13 +490,17 @@ export async function rebuildProfilesForArticle(
 ): Promise<{ deleted: number; created: number }> {
   const detected = await detectArticleSizes(tenantId, nmId);
   const deleted = await withTenantContext(db, tenantId, async (tx) => {
+    // Auto-generated profiles match either condition:
+    //   • source_template IS NOT NULL — built from one of the 4 templates
+    //   • name LIKE 'Стандарт%' — fallback default, irrespective of is_default
+    // User-renamed/manual profiles use other names and survive.
     const result = await tx.execute(sql`
       DELETE FROM size_profiles
       WHERE tenant_id = ${tenantId}
         AND nm_id = ${nmId}
         AND (
           source_template IS NOT NULL
-          OR (is_default = true AND name LIKE 'Стандарт%')
+          OR name LIKE 'Стандарт%'
         )
       RETURNING id
     `);
