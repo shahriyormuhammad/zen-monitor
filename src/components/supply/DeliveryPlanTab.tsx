@@ -23,6 +23,7 @@ import {
 import type { DistributionResult, SupplyStrategy } from '@/server/supply/distribution';
 import { ArticleAutocomplete } from './ArticleAutocomplete';
 import { DeficitClusters } from './DeficitClusters';
+import { DeficitWidgets } from './DeficitWidgets';
 
 /* ── Types ─────────────────────────────────────── */
 
@@ -366,6 +367,9 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
           Список пуст. Добавь артикул, и система предложит распределение по округам.
         </div>
       )}
+
+      {/* ─ Виджеты сводки ─ */}
+      <DeficitWidgets tenantId={tenantId} />
 
       {/* ─ Дефицит по кластерам ─ */}
       <DeficitClusters tenantId={tenantId} />
