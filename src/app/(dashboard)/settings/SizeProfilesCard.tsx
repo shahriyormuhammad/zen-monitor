@@ -119,9 +119,12 @@ export function SizeProfilesCard() {
       return syncProductSizesAction(tenantId);
     },
     onSuccess: (summary) => {
+      const rebuildPart = summary.rebuild
+        ? ` · пересоздано ${summary.rebuild.created} профилей (старых удалено ${summary.rebuild.deleted})`
+        : '';
       setSyncMessage({
         tone: 'ok',
-        text: `Загружено ${summary.cardsFetched} карточек · ${summary.rowsInserted} размеров (${summary.nmIdsWithSizes} артикулов с размерами) за ${(summary.durationMs / 1000).toFixed(1)} с. Перезапускаю авто-материализацию…`,
+        text: `WB: ${summary.cardsFetched} карточек · ${summary.rowsInserted} размеров · ${summary.nmIdsWithSizes} артикулов с размерами${rebuildPart} (${(summary.durationMs / 1000).toFixed(1)} с)`,
       });
       queryClient.invalidateQueries({ queryKey: ['size-profiles-snapshot', tenantId] });
     },
@@ -272,7 +275,8 @@ function ArticleRow({
   onRebuild: () => void;
   rebuilding: boolean;
 }) {
-  const [expanded, setExpanded] = useState(profiles.length > 1);
+  // Always show the profile list — they're the whole point of the row.
+  const [expanded, setExpanded] = useState(profiles.length > 0);
   const widest = profiles[0]?.sizes ?? [];
   const wide = isWideSizeRange(widest);
 
@@ -375,9 +379,14 @@ function ArticleRow({
                   сделать по умолч.
                 </button>
               )}
-              <div className="ml-auto flex gap-1">
-                <button type="button" onClick={() => onEdit(p)} className="rounded-md p-1.5 text-muted-foreground hover:text-foreground" title="Редактировать">
-                  <Pencil className="h-3.5 w-3.5" />
+              <div className="ml-auto flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onEdit(p)}
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-[10.5px] font-bold text-foreground hover:border-cyan-500 hover:text-cyan-700 dark:hover:text-cyan-300"
+                  title="Изменить раздачу (размеры × шт в коробке), название или баркоды"
+                >
+                  <Pencil className="h-3 w-3" /> Изменить
                 </button>
                 <button
                   type="button"

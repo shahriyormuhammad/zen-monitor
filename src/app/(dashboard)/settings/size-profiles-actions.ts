@@ -10,12 +10,17 @@ import {
   listArticleCatalog,
   listProfiles,
   rebuildProfilesForArticle,
+  rebuildProfilesForTenant,
   setProfileDefault,
   upsertProfile,
   type SizeProfile,
   type SizeProfileInput,
 } from '@/server/size-profiles/service';
 import { syncProductSizes, type ProductSizesSyncSummary } from '@/server/size-profiles/sync';
+
+export type ProductSizesSyncResult = ProductSizesSyncSummary & {
+  rebuild: { articlesProcessed: number; deleted: number; created: number };
+};
 
 export type SizeProfilesSnapshot = {
   articles: Awaited<ReturnType<typeof listArticleCatalog>>;
@@ -111,13 +116,18 @@ export async function detectArticleSizesAction(tenantId: string, nmId: number): 
 
 /**
  * Pull size catalogue (tech_size + barcode) for every product from WB
- * Content API. After it runs, profiles get the barcodes baked in.
+ * Content API, THEN immediately re-materialise auto-generated profiles
+ * using the fresh data. Stale "Стандарт" profiles that were built before
+ * the sync (e.g. from order history) get replaced; user-renamed and
+ * fully manual profiles stay intact.
  */
-export async function syncProductSizesAction(tenantId: string): Promise<ProductSizesSyncSummary> {
+export async function syncProductSizesAction(tenantId: string): Promise<ProductSizesSyncResult> {
   await requireTenantFeatureAccess(tenantId, 'settings', ['owner', 'admin', 'manager']);
   const summary = await syncProductSizes(tenantId);
+  const rebuild = await rebuildProfilesForTenant(tenantId);
   revalidatePath('/settings');
-  return summary;
+  revalidatePath('/supply');
+  return { ...summary, rebuild };
 }
 
 /**

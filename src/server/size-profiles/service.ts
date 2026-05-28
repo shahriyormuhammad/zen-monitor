@@ -475,13 +475,45 @@ export async function rebuildProfilesForArticle(
       DELETE FROM size_profiles
       WHERE tenant_id = ${tenantId}
         AND nm_id = ${nmId}
-        AND (source_template IS NOT NULL OR (is_default = true AND name LIKE 'Стандарт%'))
+        AND (
+          source_template IS NOT NULL
+          OR (is_default = true AND name LIKE 'Стандарт%')
+        )
       RETURNING id
     `);
     return Array.isArray(result) ? result.length : 0;
   });
   const created = await ensureProfilesForArticle(tenantId, nmId, vendorCode, detected);
   return { deleted, created };
+}
+
+/**
+ * Bulk-rebuild: walk every article in the catalogue, drop its auto-generated
+ * profiles and recreate them from the latest detected sizes. Called right
+ * after a WB Content API sync so stale «Стандарт» profiles (created before
+ * sync, with partial sizes from order history) get replaced with fresh
+ * ones that include WB barcodes per size.
+ *
+ * User-renamed profiles or fully manual entries stay intact because the
+ * DELETE filter only catches auto-generated rows.
+ */
+export async function rebuildProfilesForTenant(tenantId: string): Promise<{
+  articlesProcessed: number;
+  deleted: number;
+  created: number;
+}> {
+  const articles = await listArticleCatalog(tenantId);
+  if (articles.length === 0) {
+    return { articlesProcessed: 0, deleted: 0, created: 0 };
+  }
+  let deleted = 0;
+  let created = 0;
+  for (const article of articles) {
+    const result = await rebuildProfilesForArticle(tenantId, article.nmId, article.vendorCode);
+    deleted += result.deleted;
+    created += result.created;
+  }
+  return { articlesProcessed: articles.length, deleted, created };
 }
 
 /* ─────────────── helpers ─────────────── */
