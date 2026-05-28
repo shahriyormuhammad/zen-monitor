@@ -18,6 +18,8 @@ export type SizeTemplate = {
   /** Stable id stored in size_profiles.source_template (matches `name`). */
   id: string;
   name: string;
+  /** Human group label for the auto-split case (Подростковая / Взрослая). */
+  group: 'teen' | 'adult';
   /** Sizes ordered canonically. */
   sizes: string[];
   /** size → pairs-per-box. Sum is the standard 8 pairs/коробка. */
@@ -28,28 +30,37 @@ export const SIZE_TEMPLATES: SizeTemplate[] = [
   {
     id: '41-46',
     name: '41-46',
+    group: 'adult',
     sizes: ['41', '42', '43', '44', '45', '46'],
     map: { '41': 1, '42': 1, '43': 2, '44': 2, '45': 1, '46': 1 },
   },
   {
     id: '41-45',
     name: '41-45',
+    group: 'adult',
     sizes: ['41', '42', '43', '44', '45'],
     map: { '41': 1, '42': 2, '43': 2, '44': 2, '45': 1 },
   },
   {
     id: '37-41',
     name: '37-41',
+    group: 'teen',
     sizes: ['37', '38', '39', '40', '41'],
     map: { '37': 1, '38': 2, '39': 2, '40': 2, '41': 1 },
   },
   {
     id: '36-41',
     name: '36-41',
+    group: 'teen',
     sizes: ['36', '37', '38', '39', '40', '41'],
     map: { '36': 1, '37': 1, '38': 2, '39': 2, '40': 1, '41': 1 },
   },
 ];
+
+export const GROUP_LABEL: Record<SizeTemplate['group'], string> = {
+  teen: 'Подростковая',
+  adult: 'Взрослая',
+};
 
 /** Sort sizes numerically, with lexical fallback (matches Postal spSortSizes). */
 export function sortSizesByValue(sizes: string[]): string[] {
@@ -73,6 +84,43 @@ export function findExactTemplate(articleSizes: string[]): SizeTemplate | null {
   for (const tpl of SIZE_TEMPLATES) {
     if (tpl.sizes.length !== set.size) continue;
     if (tpl.sizes.every((s) => set.has(s))) return tpl;
+  }
+  return null;
+}
+
+/**
+ * Wide range detection: find a {teen, adult} pair of templates whose union
+ * is EXACTLY the article's size set (with the overlap point — usually 41 —
+ * appearing in both). This is the "Подростковая + Взрослая" auto-split:
+ * the article ships in two physical boxes, each with its own 8-pair
+ * ростовка, sharing the size 41 barcode.
+ *
+ * Returns null if no clean two-template cover exists.
+ */
+export function findTwoTemplateSplit(
+  articleSizes: string[],
+): { teen: SizeTemplate; adult: SizeTemplate } | null {
+  const articleSet = new Set(articleSizes.map((s) => String(s).trim()));
+  if (articleSet.size < 7) return null; // a single template can fit anything ≤ 6 sizes
+
+  const teens = SIZE_TEMPLATES.filter((t) => t.group === 'teen');
+  const adults = SIZE_TEMPLATES.filter((t) => t.group === 'adult');
+
+  for (const teen of teens) {
+    for (const adult of adults) {
+      // Union must equal the article set; both must be subsets.
+      if (!teen.sizes.every((s) => articleSet.has(s))) continue;
+      if (!adult.sizes.every((s) => articleSet.has(s))) continue;
+      const union = new Set<string>();
+      teen.sizes.forEach((s) => union.add(s));
+      adult.sizes.forEach((s) => union.add(s));
+      if (union.size !== articleSet.size) continue;
+      let equal = true;
+      for (const s of articleSet) {
+        if (!union.has(s)) { equal = false; break; }
+      }
+      if (equal) return { teen, adult };
+    }
   }
   return null;
 }

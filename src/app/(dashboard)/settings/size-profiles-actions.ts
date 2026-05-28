@@ -22,6 +22,10 @@ export type SizeProfilesSnapshot = {
   profiles: SizeProfile[];
   /** Stats from the auto-materialisation pass (Постал's ensureDefaultProfile). */
   ensured: { articlesProcessed: number; profilesCreated: number };
+  /** nmId → number of distinct sizes in product_sizes (WB Content API sync). */
+  wbSizesCountByNmId: Record<string, number>;
+  /** Tenant has at least one synced row in product_sizes. */
+  hasWbSizesData: boolean;
 };
 
 /**
@@ -45,11 +49,33 @@ export async function loadSizeProfilesSnapshot(tenantId: string): Promise<SizePr
     console.error('[size-profiles] ensureProfilesForTenant failed', error);
   }
 
-  const [articles, profiles] = await Promise.all([
+  const [articles, profiles, wbSizes] = await Promise.all([
     listArticleCatalog(tenantId),
     listProfiles(tenantId),
+    countWbSizesPerArticle(tenantId),
   ]);
-  return { articles, profiles, ensured };
+  const wbSizesCountByNmId: Record<string, number> = {};
+  let hasWbSizesData = false;
+  for (const row of wbSizes) {
+    wbSizesCountByNmId[String(row.nmId)] = row.count;
+    hasWbSizesData = true;
+  }
+  return { articles, profiles, ensured, wbSizesCountByNmId, hasWbSizesData };
+}
+
+async function countWbSizesPerArticle(tenantId: string): Promise<Array<{ nmId: number; count: number }>> {
+  const { db, withTenantContext } = await import('@/lib/db');
+  const { sql } = await import('drizzle-orm');
+  return withTenantContext(db, tenantId, async (tx) => {
+    const result = await tx.execute(sql`
+      SELECT nm_id::text AS nm_id, COUNT(DISTINCT tech_size)::int AS cnt
+      FROM product_sizes
+      WHERE tenant_id = ${tenantId}
+      GROUP BY nm_id
+    `);
+    const rows = result as unknown as Array<{ nm_id: string; cnt: number }>;
+    return rows.map((r) => ({ nmId: Number(r.nm_id), count: Number(r.cnt) }));
+  });
 }
 
 export async function upsertSizeProfileAction(

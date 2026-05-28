@@ -65,6 +65,8 @@ export function SizeProfilesCard() {
   const articles = snapshotQuery.data?.articles ?? [];
   const profiles = snapshotQuery.data?.profiles ?? [];
   const ensured = snapshotQuery.data?.ensured;
+  const wbSizesCountByNmId = snapshotQuery.data?.wbSizesCountByNmId ?? {};
+  const hasWbSizesData = snapshotQuery.data?.hasWbSizesData ?? false;
 
   const profilesByNmId = useMemo(() => {
     const map = new Map<number, SizeProfile[]>();
@@ -216,6 +218,7 @@ export function SizeProfilesCard() {
               key={article.nmId}
               article={article}
               profiles={profilesByNmId.get(article.nmId) ?? []}
+              wbSizesCount={wbSizesCountByNmId[String(article.nmId)] ?? 0}
               onCreate={() => setEditorState({ mode: 'create', article })}
               onEdit={(profile) => setEditorState({ mode: 'edit', article, profile })}
               onDelete={(id) => {
@@ -257,10 +260,11 @@ export function SizeProfilesCard() {
 /* ── Article row ───────────────────────────────── */
 
 function ArticleRow({
-  article, profiles, onCreate, onEdit, onDelete, onSetDefault, onRebuild, rebuilding,
+  article, profiles, wbSizesCount, onCreate, onEdit, onDelete, onSetDefault, onRebuild, rebuilding,
 }: {
   article: ArticleEntry;
   profiles: SizeProfile[];
+  wbSizesCount: number;
   onCreate: () => void;
   onEdit: (p: SizeProfile) => void;
   onDelete: (id: string) => void;
@@ -297,11 +301,20 @@ function ArticleRow({
             {article.brand ? <span className="text-[10px] text-muted-foreground">· {article.brand}</span> : null}
             {article.category ? <span className="text-[10px] text-muted-foreground">· {article.category}</span> : null}
           </div>
-          <div className="mt-0.5 text-[11px] text-muted-foreground">
+          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
             {profiles.length === 0
-              ? 'Нет профилей (нет истории заказов)'
-              : `${profiles.length} ${plural(profiles.length, 'профиль', 'профиля', 'профилей')} · полный ряд: ${describeRange(rangeChips)}`}
-            {wide ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">⚠ широкий ряд — авто-сплит</span> : null}
+              ? <span>Нет профилей</span>
+              : <span>{profiles.length} {plural(profiles.length, 'профиль', 'профиля', 'профилей')} · полный ряд: {describeRange(rangeChips)}</span>}
+            {wbSizesCount > 0 ? (
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                WB: {wbSizesCount} {plural(wbSizesCount, 'размер', 'размера', 'размеров')}
+              </span>
+            ) : (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                ⚠ Размеры WB не подтянуты
+              </span>
+            )}
+            {wide ? <span className="rounded-full bg-amber-100 px-2 py-0.5 font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">⚠ широкий ряд — авто-сплит</span> : null}
           </div>
         </div>
         <button
@@ -463,11 +476,11 @@ function ProfileEditorModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
-          {/* Detected sizes hint (read-only) */}
+          {/* Sizes loaded from WB nomenclature (product_sizes) */}
           {mode === 'create' && detectedSizes.length > 0 ? (
             <div className="mb-4 rounded-2xl border border-emerald-300/60 bg-emerald-50 p-3 dark:border-emerald-700/40 dark:bg-emerald-950/30">
               <div className="text-[10.5px] font-black uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
-                Размеры артикула в истории заказов
+                Размеры артикула (WB Content API)
               </div>
               <div className="mt-1.5 flex flex-wrap gap-1">
                 {detectedSizes.map((s) => (
@@ -477,7 +490,16 @@ function ProfileEditorModal({
                 ))}
               </div>
               <p className="mt-2 text-[10.5px] text-muted-foreground">
-                Этот артикул уже автоматически получил подходящие профили. Здесь — для создания дополнительного.
+                Это все размеры артикула по номенклатуре WB. Авто-материализация уже создала подходящие профили — здесь можно собрать ещё один вручную.
+              </p>
+            </div>
+          ) : mode === 'create' && !detectedQuery.isLoading ? (
+            <div className="mb-4 rounded-2xl border border-amber-300/60 bg-amber-50 p-3 dark:border-amber-700/40 dark:bg-amber-950/30">
+              <div className="text-[10.5px] font-black uppercase tracking-[0.18em] text-amber-800 dark:text-amber-200">
+                Размеры WB не подтянуты
+              </div>
+              <p className="mt-1 text-[11.5px] text-amber-900 dark:text-amber-100">
+                Нет данных в локальном кэше номенклатуры WB. Сначала нажми «Подтянуть размеры из WB» в шапке блока «Ростовки» — это даст полный набор размеров + штрихкоды по каждому.
               </p>
             </div>
           ) : null}

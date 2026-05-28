@@ -25,6 +25,8 @@ import {
   buildSizesFromTemplate,
   findApplicableTemplates,
   findExactTemplate,
+  findTwoTemplateSplit,
+  GROUP_LABEL,
   sortSizesByValue,
   type SizeTemplate,
 } from './templates';
@@ -96,16 +98,12 @@ export async function listArticleCatalog(tenantId: string): Promise<ArticleCatal
 }
 
 /**
- * Detect which sizes a given article ships in.
- *
- *   1. Preferred: `product_sizes` table — populated by the WB Content API
- *      sync (`syncProductSizes`). Includes barcodes per size.
- *   2. Fallback: distinct tech_size values from `raw_api_orders`. No
- *      barcodes, and missing sizes that haven't shipped yet.
- *
- * The Settings card has a "Подтянуть размеры из WB" button that triggers
- * the sync — once it runs, this function returns the full size set with
- * barcodes attached.
+ * Detect which sizes a given article ships in. Single source of truth:
+ * the `product_sizes` table, populated by `syncProductSizes` (WB Content
+ * API). No order-history fallback — for ростовки we need ALL nomenclature
+ * sizes including those that haven't shipped yet, not just those with
+ * orders. Returns empty list until the user clicks «Подтянуть размеры из
+ * WB» at least once.
  */
 export type DetectedSize = { size: string; barcode: string };
 
@@ -114,7 +112,6 @@ export async function detectArticleSizes(
   nmId: number,
 ): Promise<DetectedSize[]> {
   return withTenantContext(db, tenantId, async (tx) => {
-    // Primary source — WB Content API synced rows.
     const synced = await tx.execute(sql`
       SELECT tech_size, MAX(barcode) AS barcode
       FROM product_sizes
@@ -122,33 +119,17 @@ export async function detectArticleSizes(
         AND nm_id = ${nmId}
       GROUP BY tech_size
     `);
-    const syncedRows = synced as unknown as Array<{ tech_size: string; barcode: string | null }>;
-    if (syncedRows.length > 0) {
-      const list = syncedRows
-        .map((r) => ({ size: r.tech_size.trim(), barcode: (r.barcode ?? '').trim() }))
-        .filter((r) => r.size.length > 0 && r.size !== '0');
-      return sortSizesByValue(list.map((r) => r.size))
-        .map((s) => list.find((r) => r.size === s)!)
-        .filter(Boolean);
-    }
-
-    // Fallback — order history (sizes only, no barcodes).
-    const result = await tx.execute(sql`
-      SELECT DISTINCT tech_size
-      FROM raw_api_orders
-      WHERE tenant_id = ${tenantId}
-        AND nm_id = ${nmId}
-        AND tech_size IS NOT NULL
-        AND tech_size <> ''
-        AND tech_size <> '0'
-    `);
-    const rows = result as unknown as Array<{ tech_size: string }>;
-    return sortSizesByValue(rows.map((r) => r.tech_size.trim()).filter((s) => s.length > 0))
-      .map((size) => ({ size, barcode: '' }));
+    const rows = synced as unknown as Array<{ tech_size: string; barcode: string | null }>;
+    const list = rows
+      .map((r) => ({ size: r.tech_size.trim(), barcode: (r.barcode ?? '').trim() }))
+      .filter((r) => r.size.length > 0 && r.size !== '0');
+    return sortSizesByValue(list.map((r) => r.size))
+      .map((s) => list.find((r) => r.size === s)!)
+      .filter(Boolean);
   });
 }
 
-/** Bulk-detect sizes for many nmIds in one query — used by the snapshot loader. */
+/** Bulk-detect sizes for many nmIds in one query — same single source. */
 export async function detectSizesForMany(
   tenantId: string,
   nmIds: number[],
@@ -157,54 +138,24 @@ export async function detectSizesForMany(
   if (nmIds.length === 0) return map;
   return withTenantContext(db, tenantId, async (tx) => {
     const nmIdList = sql.join(nmIds.map((nm) => sql`${nm}::bigint`), sql`, `);
-
-    // Primary source — product_sizes (synced from WB Content API).
-    const syncedResult = await tx.execute(sql`
+    const result = await tx.execute(sql`
       SELECT nm_id::text AS nm_id, tech_size, MAX(barcode) AS barcode
       FROM product_sizes
       WHERE tenant_id = ${tenantId}
         AND nm_id IN (${nmIdList})
       GROUP BY nm_id, tech_size
     `);
-    const syncedRows = syncedResult as unknown as Array<{ nm_id: string; tech_size: string; barcode: string | null }>;
-    const synced = new Map<number, DetectedSize[]>();
-    for (const r of syncedRows) {
+    const rows = result as unknown as Array<{ nm_id: string; tech_size: string; barcode: string | null }>;
+    const buckets = new Map<number, DetectedSize[]>();
+    for (const r of rows) {
       const nm = Number(r.nm_id);
-      const list = synced.get(nm) ?? [];
+      const list = buckets.get(nm) ?? [];
       list.push({ size: r.tech_size.trim(), barcode: (r.barcode ?? '').trim() });
-      synced.set(nm, list);
+      buckets.set(nm, list);
     }
-    for (const [nm, list] of synced.entries()) {
+    for (const [nm, list] of buckets.entries()) {
       const sorted = sortSizesByValue(list.map((r) => r.size));
-      synced.set(nm, sorted.map((s) => list.find((r) => r.size === s)!).filter(Boolean));
-      map.set(nm, synced.get(nm)!);
-    }
-
-    // For nmIds without synced rows, fall back to order history.
-    const missing = nmIds.filter((nm) => !synced.has(nm));
-    if (missing.length > 0) {
-      const missingList = sql.join(missing.map((nm) => sql`${nm}::bigint`), sql`, `);
-      const ordersResult = await tx.execute(sql`
-        SELECT nm_id::text AS nm_id, tech_size
-        FROM raw_api_orders
-        WHERE tenant_id = ${tenantId}
-          AND nm_id IN (${missingList})
-          AND tech_size IS NOT NULL
-          AND tech_size <> ''
-          AND tech_size <> '0'
-        GROUP BY nm_id, tech_size
-      `);
-      const rows = ordersResult as unknown as Array<{ nm_id: string; tech_size: string }>;
-      const buckets = new Map<number, string[]>();
-      for (const r of rows) {
-        const nm = Number(r.nm_id);
-        const list = buckets.get(nm) ?? [];
-        list.push(r.tech_size.trim());
-        buckets.set(nm, list);
-      }
-      for (const [nm, list] of buckets.entries()) {
-        map.set(nm, sortSizesByValue(list).map((size) => ({ size, barcode: '' })));
-      }
+      map.set(nm, sorted.map((s) => list.find((r) => r.size === s)!).filter(Boolean));
     }
     return map;
   });
@@ -351,9 +302,8 @@ function planProfilesForArticle(detected: DetectedSize[]): DesiredProfile[] {
     if (s.barcode) barcodeBySize[s.size] = s.barcode;
   }
 
-  const applicable = findApplicableTemplates(articleSizes);
+  // 1) Exact template match (e.g. {41,42,43,44,45,46} → "Стандарт 41-46").
   const exact = findExactTemplate(articleSizes);
-
   if (exact) {
     const sizes = buildSizesFromTemplate(exact, barcodeBySize);
     return [{
@@ -365,8 +315,34 @@ function planProfilesForArticle(detected: DetectedSize[]): DesiredProfile[] {
     }];
   }
 
-  // No exact match — fallback Стандарт with perBox=1 each (barcodes attached
-  // when known).
+  // 2) Paired wide split: a teen + adult template pair whose union equals
+  //    the article's size set (e.g. 36-46 → "Подростковая 36-41" +
+  //    "Взрослая 41-46"). Two profiles, both default=false, BUT we mark
+  //    the adult one as default for the dropdown.
+  const split = findTwoTemplateSplit(articleSizes);
+  if (split) {
+    const teenSizes = buildSizesFromTemplate(split.teen, barcodeBySize);
+    const adultSizes = buildSizesFromTemplate(split.adult, barcodeBySize);
+    return [
+      {
+        name: `${GROUP_LABEL.adult} ${split.adult.name}`,
+        sizes: adultSizes,
+        totalPerBox: adultSizes.reduce((s, r) => s + r.perBox, 0),
+        isDefault: true,
+        sourceTemplate: split.adult.id,
+      },
+      {
+        name: `${GROUP_LABEL.teen} ${split.teen.name}`,
+        sizes: teenSizes,
+        totalPerBox: teenSizes.reduce((s, r) => s + r.perBox, 0),
+        isDefault: false,
+        sourceTemplate: split.teen.id,
+      },
+    ];
+  }
+
+  // 3) No exact, no paired split — fall back to «Стандарт» (all perBox=1)
+  //    plus every applicable template as a hint.
   const standard: DesiredProfile = {
     name: 'Стандарт',
     sizes: detected.map((s) => ({
@@ -378,23 +354,20 @@ function planProfilesForArticle(detected: DetectedSize[]): DesiredProfile[] {
     isDefault: true,
     sourceTemplate: null,
   };
-
+  const applicable = findApplicableTemplates(articleSizes);
   if (applicable.length === 0) {
     return [standard];
   }
-
-  // Wide range — auto-split: one extra profile per applicable template.
   const extras: DesiredProfile[] = applicable.map((tpl: SizeTemplate) => {
     const sizes = buildSizesFromTemplate(tpl, barcodeBySize);
     return {
-      name: tpl.name,
+      name: `${GROUP_LABEL[tpl.group]} ${tpl.name}`,
       sizes,
       totalPerBox: sizes.reduce((s, r) => s + r.perBox, 0),
       isDefault: false,
       sourceTemplate: tpl.id,
     };
   });
-
   return [standard, ...extras];
 }
 
