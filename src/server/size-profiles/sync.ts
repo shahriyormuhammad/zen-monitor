@@ -90,7 +90,12 @@ export async function syncProductSizes(tenantId: string): Promise<ProductSizesSy
   const token = await loadTenantWbToken(tenantId);
 
   // Pull every card (paginated). limit=100 is the WB-recommended page size.
-  const cards = await wbApi.getAllCardsList(token, 100);
+  // filter: { withPhoto: -1 } matches Постал — without it WB defaults to
+  // { withRoot: true } which silently filters out a lot of cards (for the
+  // ИП Шахриёр cabinet the default returned 0 cards in production).
+  const cards = await wbApi.getAllCardsList(token, 100, {
+    filter: { withPhoto: -1 },
+  });
 
   // Flatten into product_sizes rows.
   const seen = new Set<string>();
