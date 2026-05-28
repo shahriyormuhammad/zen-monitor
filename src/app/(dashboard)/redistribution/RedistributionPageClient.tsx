@@ -24,7 +24,7 @@ import {
 
 import { OperatorState } from '@/components/dashboard/OperatorState';
 import { formatCurrency, formatNumber, formatPercent } from '@/components/economics/helpers';
-import { resolveIrpFromLocalization } from '@/components/economics/constants';
+import { resolveIrpFromLocalization, resolveLocalityIndexMultiplierFromLocalization as resolveKtrFromLocalization } from '@/components/economics/constants';
 import { toLocalDateParam } from '@/lib/date-range';
 import { useStore } from '@/store/useStore';
 import type {
@@ -873,6 +873,8 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
   const [currentPage, setCurrentPage] = useState(1);
   const [runningSlotMonitor, setRunningSlotMonitor] = useState(false);
   const [manualSubmitMessage, setManualSubmitMessage] = useState<string | null>(null);
+  // Горизонт WB-пересчёта индекса (скользящее окно 13 недель).
+  const [horizonWeeks, setHorizonWeeks] = useState<1 | 13>(13);
 
   const sortedRecommendations = useMemo(() => {
     const recs = planQuery.data?.recommendations ?? [];
@@ -1094,6 +1096,74 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
           tone={realCurrentKrp === 0 ? 'ok' : localDelta > 0 ? 'ok' : 'default'}
         />
       </div>
+
+      {/* ИЛ / ИРП индексы + сплит экономии + горизонт WB-пересчёта */}
+      {displaySavingsRub > 0 ? (
+        <div className="rounded-2xl border border-border bg-card px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Индексы WB и эффект перевозки
+            </div>
+            {/* Горизонт: WB пересчитывает ИЛ на скользящем окне 13 недель */}
+            <div className="inline-flex rounded-full border border-border bg-subtle p-0.5 text-[11px] font-bold">
+              {([1, 13] as const).map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => setHorizonWeeks(w)}
+                  className={`rounded-full px-2.5 py-1 transition-colors ${horizonWeeks === w ? 'bg-foreground text-card' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  через {w} нед
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {(() => {
+            const w = horizonWeeks / 13; // доля реализации улучшения
+            const blendedLocal = displayCurrentLocal + localDelta * w;
+            const ilNow = resolveKtrFromLocalization(displayCurrentLocal);
+            const ilFuture = resolveKtrFromLocalization(blendedLocal);
+            const krpFuture = resolveIrpFromLocalization(blendedLocal);
+            const savingsAtHorizon = displaySavingsRub * w;
+            const krpPart = realCurrentKrp === 0 ? 0 : summary.krpSavingsRub * w;
+            const ktrPart = realCurrentKrp === 0 ? 0 : summary.ktrLogisticsSavingsRub * w;
+            return (
+              <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="rounded-xl border border-border bg-subtle/40 px-3 py-2">
+                  <div className="text-[10px] uppercase text-muted-foreground">ИЛ (логистика)</div>
+                  <div className="mt-0.5 font-mono text-[15px] font-bold text-foreground">
+                    {ilNow.toFixed(2)} <span className="text-emerald-600">→ {ilFuture.toFixed(2)}</span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">множитель тарифа, ниже — лучше</div>
+                </div>
+                <div className="rounded-xl border border-border bg-subtle/40 px-3 py-2">
+                  <div className="text-[10px] uppercase text-muted-foreground">ИРП (комиссия)</div>
+                  <div className="mt-0.5 font-mono text-[15px] font-bold text-foreground">
+                    {realCurrentKrp.toFixed(2)}% <span className="text-emerald-600">→ {krpFuture.toFixed(2)}%</span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">доплата за дальность</div>
+                </div>
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
+                  <div className="text-[10px] uppercase text-muted-foreground">Экономия логистика</div>
+                  <div className="mt-0.5 font-mono text-[15px] font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(ktrPart, 0)}</div>
+                  <div className="text-[10px] text-muted-foreground">КТР — тариф доставки</div>
+                </div>
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
+                  <div className="text-[10px] uppercase text-muted-foreground">Экономия комиссия</div>
+                  <div className="mt-0.5 font-mono text-[15px] font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(krpPart, 0)}</div>
+                  <div className="text-[10px] text-muted-foreground">КРП — доплата %</div>
+                </div>
+                <div className="col-span-2 text-[11px] text-muted-foreground md:col-span-4">
+                  WB пересчитывает индекс локализации на скользящем окне 13 недель. {horizonWeeks === 13
+                    ? 'Через 13 недель эффект перевозки реализуется полностью.'
+                    : `Через ${horizonWeeks} нед реализуется ~${Math.round(w * 100)}% эффекта — итого ${formatCurrency(savingsAtHorizon, 0)}.`}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      ) : null}
 
       {/* Если реальная доплата уже 0% — заметный блок «всё хорошо» */}
       {noSavingsBecauseAlreadyAtTarget && (

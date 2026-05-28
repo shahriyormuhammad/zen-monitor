@@ -2,6 +2,7 @@ import { and, eq, inArray, lte, sql } from "drizzle-orm";
 
 import { db, withTenantContext } from "@/lib/db";
 import { products, rawApiRealizationReports, rawApiStockSizes } from "@/lib/db/schema";
+import { resolveLocalityIndexMultiplierFromLocalization } from "@/components/economics/constants";
 
 const TARGET_COVERAGE_DAYS = 14;
 const FORECAST_HORIZON_DAYS = 14;
@@ -195,33 +196,17 @@ function resolveKrpByLocalization(localSharePct: number) {
 }
 
 /**
- * КТР — коэффициент логистики WB по индексу локализации. Множитель тарифа
- * доставки: чем выше локализация (доля локальных продаж), тем дешевле
- * логистика. Диапазон 0.65 (идеально) … 1.70 (совсем не локализовано).
+ * КТР — коэффициент логистики WB по индексу локализации (множитель тарифа
+ * доставки, ниже = дешевле). Используем КАНОНИЧЕСКУЮ сетку из economics
+ * (resolveLocalityIndexMultiplierFromLocalization, справка WB 23.03.2026,
+ * 0.50…2.00) — она точнее портированной из Postal.
  *
- * Используется НЕ для абсолютной стоимости, а для ОТНОШЕНИЯ: реальную
- * стоимость доставки берём из realization-отчётов (delivery_rub), а КТР
- * лишь масштабирует её при изменении локализации. Так расчёт опирается на
- * фактические списания WB, а не на хардкод объёма/тарифа.
+ * Применяется НЕ для абсолютной стоимости, а для ОТНОШЕНИЯ: реальную
+ * стоимость доставки берём из realization (delivery_rub), а КТР лишь
+ * масштабирует её при изменении локализации.
  */
 function resolveKtrByLocalization(localSharePct: number) {
-  const share = clampPercent(localSharePct);
-  if (share >= 90) return 0.65;
-  if (share >= 85) return 0.70;
-  if (share >= 80) return 0.80;
-  if (share >= 75) return 0.85;
-  if (share >= 70) return 0.90;
-  if (share >= 65) return 0.95;
-  if (share >= 60) return 1.00;
-  if (share >= 55) return 1.05;
-  if (share >= 50) return 1.10;
-  if (share >= 45) return 1.20;
-  if (share >= 40) return 1.30;
-  if (share >= 35) return 1.40;
-  if (share >= 30) return 1.50;
-  if (share >= 25) return 1.55;
-  if (share >= 20) return 1.60;
-  return 1.70;
+  return resolveLocalityIndexMultiplierFromLocalization(clampPercent(localSharePct));
 }
 
 function coverageDays(stock: number, dailyDemand: number) {
