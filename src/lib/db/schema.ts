@@ -2129,3 +2129,37 @@ export const productSizes = pgTable('product_sizes', {
   productSizesUniqueIdx: uniqueIndex('product_sizes_unique_idx').on(table.tenantId, table.nmId, table.techSize, table.barcode),
   productSizesTenantNmIdx: index('product_sizes_tenant_nm_idx').on(table.tenantId, table.nmId),
 }));
+
+/**
+ * Accumulated supply list — rows the user has assembled to ship to WB.
+ * Built either from the manual form (Шаг 1) or from the bulk-import
+ * накладная (Шаг 2). Each row freezes a snapshot of the ростовка at the
+ * moment of adding.
+ */
+export type SupplyItemRow = {
+  size: string;
+  perBox: number;
+  boxes: number;
+  total: number;
+  barcode: string;
+};
+
+export const supplyItems = pgTable('supply_items', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  vendorCode: varchar('vendor_code', { length: 255 }).notNull(),
+  nmId: bigint('nm_id', { mode: 'number' }),
+  profileId: uuid('profile_id').references(() => sizeProfiles.id, { onDelete: 'set null' }),
+  profileName: varchar('profile_name', { length: 255 }),
+  boxes: integer('boxes').default(1).notNull(),
+  sumPerBox: integer('sum_per_box').default(0).notNull(),
+  totalPieces: integer('total_pieces').default(0).notNull(),
+  rows: jsonb('rows').$type<SupplyItemRow[]>().default(sql`'[]'::jsonb`).notNull(),
+  missingBc: integer('missing_bc').default(0).notNull(),
+  /** 'manual' for Шаг 1 form, 'invoice' for Шаг 2 накладная bulk import. */
+  source: varchar('source', { length: 32 }).default('manual').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  supplyItemsTenantCreatedIdx: index('supply_items_tenant_created_idx').on(table.tenantId, table.createdAt),
+}));

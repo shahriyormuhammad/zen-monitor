@@ -1,29 +1,233 @@
 'use client';
 
 /**
- * Tab: «Накладная» — placeholder.
+ * Шаг 2: «Накладная» — порт Постал processInvoice.
  *
- * Полная вёрстка (вбивание пар «артикул → коробок», поиск ростовки,
- * умножение на коробки) приедет в следующем деплое — нужен сначала
- * раздел Ростовки (size profiles), а он на потом по ТЗ пользователя.
+ * Bulk-ввод пар «артикул × коробок». Поддерживается:
+ *   • Свободный ввод vendorCode — fuzzy-match по substring в обе стороны
+ *     (`«519-5»` найдёт `«А519-5 ТН-10»`).
+ *   • Сокращение `«-N»`: строка `«-5»` после `«А519-2»` читается как
+ *     `«А519-5»` (база = префикс до последнего "-").
+ *   • Кнопка Enter в поле «коробок» добавляет новую строку.
+ *
+ * После «Обработать» — каждая строка превращается в supplyItem с default
+ * профилем ростовки (или с выбранным в селекте).
  */
 
-import { FileText } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { CheckCircle2, FileText, Loader2, Plus, Trash2, X } from 'lucide-react';
 
-export function InvoiceTab({ tenantId: _tenantId }: { tenantId: string }) {
+import {
+  processInvoiceAction,
+  type InvoiceRowInput,
+} from '@/app/(dashboard)/supply/actions';
+
+type Row = {
+  id: string;
+  article: string;
+  boxes: string;
+};
+
+function makeId(): string {
+  return `inv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+/** Expand "-N" shorthand using the last non-shorthand article. */
+function expandShorthand(rawRows: Row[]): { article: string; boxes: number; inputText: string; rowId: string }[] {
+  let lastBase: string | null = null;
+  const out: { article: string; boxes: number; inputText: string; rowId: string }[] = [];
+  for (const r of rawRows) {
+    const raw = r.article.trim();
+    const boxes = Math.max(0, Number(r.boxes) || 0);
+    if (!raw || boxes <= 0) continue;
+    let article = raw;
+    const cont = raw.match(/^-(\d+)$/);
+    if (cont && lastBase) {
+      article = `${lastBase}-${cont[1]}`;
+    } else {
+      // Base = letter(s) + 2-6 digits up to the first "-".
+      const baseMatch = raw.match(/^([A-Za-zА-Яа-я]*\d{2,6})(?:-\d+)?/);
+      if (baseMatch) lastBase = baseMatch[1]!;
+    }
+    out.push({ article, boxes, inputText: raw, rowId: r.id });
+  }
+  return out;
+}
+
+export function InvoiceTab({ tenantId }: { tenantId: string }) {
+  const queryClient = useQueryClient();
+  const [rows, setRows] = useState<Row[]>([{ id: makeId(), article: '', boxes: '' }]);
+  const lastRef = useRef<HTMLInputElement | null>(null);
+
+  const expanded = useMemo(() => expandShorthand(rows), [rows]);
+
+  const addRow = () => setRows((prev) => prev.concat({ id: makeId(), article: '', boxes: '' }));
+  const updateRow = (id: string, patch: Partial<Row>) =>
+    setRows((prev) => prev.map((r) => r.id === id ? { ...r, ...patch } : r));
+  const removeRow = (id: string) =>
+    setRows((prev) => prev.length > 1 ? prev.filter((r) => r.id !== id) : prev);
+  const clearAll = () => setRows([{ id: makeId(), article: '', boxes: '' }]);
+
+  useEffect(() => {
+    if (lastRef.current) lastRef.current.focus();
+  }, [rows.length]);
+
+  const processMutation = useMutation({
+    mutationFn: async () => {
+      const inputs: InvoiceRowInput[] = expanded.map((r) => ({
+        inputText: r.inputText,
+        article: r.article,
+        boxes: r.boxes,
+      }));
+      if (inputs.length === 0) throw new Error('Нет заполненных строк');
+      return processInvoiceAction(tenantId, inputs);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supply-items', tenantId] });
+    },
+  });
+
+  const handleBoxesKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addRow();
+    }
+  };
+
   return (
-    <div className="dashboard-card p-8">
-      <div className="mx-auto flex max-w-md flex-col items-center gap-3 text-center">
-        <FileText className="h-12 w-12 text-rose-500/70" />
-        <h3 className="text-[15px] font-extrabold">Накладная</h3>
-        <p className="text-[12px] text-muted-foreground">
-          Раздел построится после загрузки <strong>Ростовок</strong>. Нужен реестр размер × штук
-          в коробке по каждому артикулу — он добавится в Настройках в следующем этапе.
-        </p>
-        <p className="text-[11px] text-muted-foreground">
-          Пока используй «План поставки» — он работает без ростовок.
-        </p>
+    <div className="space-y-4">
+      <div className="dashboard-card p-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h3 className="text-[15px] font-extrabold">Накладная</h3>
+            <p className="mt-0.5 max-w-2xl text-[12px] text-muted-foreground">
+              Вбей пары «артикул → коробок» из бумажной накладной. Система найдёт сохранённую ростовку
+              (даже если ввёл только часть кода: <code className="rounded bg-subtle px-1 font-mono text-[11px]">519-5</code> найдёт <code className="rounded bg-subtle px-1 font-mono text-[11px]">A519-5 ТН-10</code>),
+              умножит её на коробки и добавит в список поставки. Сокращение <code className="rounded bg-subtle px-1 font-mono text-[11px]">-5</code> после <code className="rounded bg-subtle px-1 font-mono text-[11px]">A519-2</code> = <code className="rounded bg-subtle px-1 font-mono text-[11px]">A519-5</code>. Enter в поле «коробок» добавляет строку.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-2">
+          {rows.map((row, idx) => (
+            <div key={row.id} className="grid items-center gap-2 sm:grid-cols-[40px_minmax(0,1fr)_120px_40px]">
+              <span className="text-[11px] font-bold text-muted-foreground">#{idx + 1}</span>
+              <input
+                value={row.article}
+                onChange={(e) => updateRow(row.id, { article: e.target.value })}
+                placeholder="Артикул (или -N для продолжения)"
+                className="h-9 w-full rounded-lg border border-border bg-card px-3 text-[12px] outline-none focus:border-rose-400"
+              />
+              <input
+                ref={idx === rows.length - 1 ? lastRef : undefined}
+                value={row.boxes}
+                onChange={(e) => updateRow(row.id, { boxes: e.target.value.replace(/\D/g, '') })}
+                onKeyDown={handleBoxesKey}
+                placeholder="Кор."
+                inputMode="numeric"
+                className="h-9 w-full rounded-lg border border-border bg-card px-3 text-right font-mono text-[12px] outline-none focus:border-rose-400"
+              />
+              <button
+                type="button"
+                onClick={() => removeRow(row.id)}
+                className="rounded-md border border-border p-1.5 text-rose-500 hover:bg-rose-50 disabled:opacity-30 dark:hover:bg-rose-950/40"
+                disabled={rows.length <= 1}
+                title="Удалить строку"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={addRow}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border bg-subtle/40 px-3 py-2 text-[11px] font-bold text-muted-foreground hover:border-rose-400 hover:text-foreground"
+          >
+            <Plus className="h-3.5 w-3.5" /> Добавить строку
+          </button>
+          <button
+            type="button"
+            onClick={() => processMutation.mutate()}
+            disabled={processMutation.isPending || expanded.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-[12px] font-bold text-card hover:bg-foreground/90 disabled:opacity-40"
+          >
+            {processMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+            Обработать накладную
+          </button>
+          <button
+            type="button"
+            onClick={clearAll}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-[11px] font-bold text-muted-foreground hover:text-foreground"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Очистить
+          </button>
+          {expanded.length > 0 ? (
+            <span className="text-[11px] text-muted-foreground">
+              К обработке: <strong>{expanded.length}</strong> {expanded.length === 1 ? 'строка' : expanded.length < 5 ? 'строки' : 'строк'}
+            </span>
+          ) : null}
+        </div>
       </div>
+
+      {/* Results */}
+      {processMutation.data ? (
+        <div className="dashboard-card overflow-hidden">
+          <header className="border-b border-border bg-subtle/30 px-5 py-3">
+            <h3 className="text-[14px] font-extrabold">Результат обработки</h3>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Добавлено в список поставки: <strong className="text-emerald-700 dark:text-emerald-300">{processMutation.data.added.length}</strong>{' · '}
+              не найдено: <strong className="text-rose-600">{processMutation.data.failed.length}</strong>
+            </p>
+          </header>
+
+          {processMutation.data.added.length > 0 ? (
+            <div className="border-b border-border">
+              <div className="px-5 py-2 text-[10.5px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                ✓ Успешно
+              </div>
+              <ul className="divide-y divide-border">
+                {processMutation.data.added.map((item) => (
+                  <li key={item.id} className="flex flex-wrap items-baseline gap-2 px-5 py-2 text-[12px]">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                    <strong>{item.vendorCode}</strong>
+                    <span className="text-muted-foreground">{item.nmId ?? '—'}</span>
+                    {item.profileName ? <span className="text-[11px] text-muted-foreground">· {item.profileName}</span> : null}
+                    <span className="text-[11px] text-muted-foreground">· {item.boxes} кор · {item.totalPieces} шт</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {processMutation.data.failed.length > 0 ? (
+            <div>
+              <div className="px-5 py-2 text-[10.5px] font-black uppercase tracking-wider text-rose-600">
+                ✗ Не найдено
+              </div>
+              <ul className="divide-y divide-border">
+                {processMutation.data.failed.map((f, i) => (
+                  <li key={i} className="flex flex-wrap items-baseline gap-2 px-5 py-2 text-[12px]">
+                    <X className="h-3.5 w-3.5 text-rose-500" />
+                    <strong>{f.inputText}</strong>
+                    <span className="text-muted-foreground">· {f.boxes} кор</span>
+                    <span className="ml-auto text-[11px] text-rose-600">{f.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {processMutation.error ? (
+        <div className="rounded-2xl border border-rose-300 bg-rose-50 p-4 text-[12px] text-rose-700 dark:border-rose-700/40 dark:bg-rose-950/40 dark:text-rose-300">
+          {processMutation.error instanceof Error ? processMutation.error.message : String(processMutation.error)}
+        </div>
+      ) : null}
     </div>
   );
 }
