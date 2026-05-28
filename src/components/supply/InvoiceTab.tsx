@@ -24,6 +24,8 @@ import {
   type InvoiceRowInput,
 } from '@/app/(dashboard)/supply/actions';
 
+type Article = Awaited<ReturnType<typeof listSupplyArticlesAction>>[number];
+
 type Row = {
   id: string;
   article: string;
@@ -113,25 +115,15 @@ export function InvoiceTab({ tenantId }: { tenantId: string }) {
           Вбей пары «артикул → коробок». Подсказки появляются по мере ввода. Часть кода тоже сработает: <code className="rounded bg-subtle px-1 font-mono">519-5</code> → <code className="rounded bg-subtle px-1 font-mono">A519-5 ТН-10</code>. Сокращение <code className="rounded bg-subtle px-1 font-mono">-5</code> после <code className="rounded bg-subtle px-1 font-mono">A519-2</code> = <code className="rounded bg-subtle px-1 font-mono">A519-5</code>. Enter в поле «Кор.» добавляет строку.
         </p>
 
-        <datalist id="invoice-vc-list">
-          {articles.map((a) => (
-            <option key={a.nmId} value={a.vendorCode}>
-              {a.brand ? `${a.brand} · ` : ''}{a.category ?? ''}
-            </option>
-          ))}
-        </datalist>
-
-        <div className="mt-3 flex max-w-[520px] flex-col gap-1">
+        <div className="mt-3 flex max-w-[600px] flex-col gap-1">
           {rows.map((row, idx) => (
             <div key={row.id} className="grid items-center gap-1.5 grid-cols-[28px_minmax(0,1fr)_70px_28px]">
               <span className="text-[10px] font-bold text-muted-foreground">#{idx + 1}</span>
-              <input
+              <ArticleAutocomplete
                 value={row.article}
-                onChange={(e) => updateRow(row.id, { article: e.target.value })}
+                onChange={(v) => updateRow(row.id, { article: v })}
+                articles={articles}
                 placeholder="Артикул (или -N)"
-                list="invoice-vc-list"
-                autoComplete="off"
-                className="h-7 w-full rounded-md border border-border bg-card px-2 text-[12px] outline-none focus:border-rose-400"
               />
               <input
                 ref={idx === rows.length - 1 ? lastRef : undefined}
@@ -240,6 +232,120 @@ export function InvoiceTab({ tenantId }: { tenantId: string }) {
       {processMutation.error ? (
         <div className="rounded-2xl border border-rose-300 bg-rose-50 p-4 text-[12px] text-rose-700 dark:border-rose-700/40 dark:bg-rose-950/40 dark:text-rose-300">
           {processMutation.error instanceof Error ? processMutation.error.message : String(processMutation.error)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ── ArticleAutocomplete ───────────────────────────────────
+ * White-background dropdown with photo thumbnails. Filters
+ * articles by substring match (case-insensitive, ignores
+ * non-alphanumeric chars so "519-5" matches "А519-5 ТН-10").
+ * Keyboard: ↑↓ navigate, Enter select, Esc close.
+ */
+
+function normalise(s: string): string {
+  return s.toLowerCase().replace(/[^a-zа-я0-9]/gi, '');
+}
+
+function ArticleAutocomplete({
+  value, onChange, articles, placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  articles: Article[];
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [hover, setHover] = useState(0);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const matches = useMemo(() => {
+    const q = normalise(value);
+    if (!q) return articles.slice(0, 30);
+    const scored: { a: Article; idx: number }[] = [];
+    for (const a of articles) {
+      const norm = normalise(a.vendorCode);
+      const idx = norm.indexOf(q);
+      if (idx >= 0) {
+        scored.push({ a, idx });
+      } else if (q.includes(norm) && norm.length >= 3) {
+        scored.push({ a, idx: 1000 });
+      }
+    }
+    scored.sort((x, y) => x.idx - y.idx);
+    return scored.slice(0, 30).map((x) => x.a);
+  }, [articles, value]);
+
+  useEffect(() => { setHover(0); }, [value]);
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!containerRef.current) return;
+      if (!containerRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
+
+  const pick = (a: Article) => {
+    onChange(a.vendorCode);
+    setOpen(false);
+    setTimeout(() => inputRef.current?.blur(), 0);
+  };
+
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHover((h) => Math.min(h + 1, matches.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHover((h) => Math.max(h - 1, 0)); }
+    else if (e.key === 'Enter') {
+      if (matches[hover]) { e.preventDefault(); pick(matches[hover]); }
+    }
+    else if (e.key === 'Escape') { setOpen(false); }
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={onKey}
+        placeholder={placeholder}
+        autoComplete="off"
+        className="h-7 w-full rounded-md border border-border bg-card px-2 text-[12px] outline-none focus:border-rose-400"
+      />
+      {open && matches.length > 0 ? (
+        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-80 overflow-y-auto rounded-lg border border-border bg-white shadow-xl dark:bg-slate-900">
+          {matches.map((a, i) => (
+            <button
+              key={a.nmId}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); pick(a); }}
+              onMouseEnter={() => setHover(i)}
+              className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-[11.5px] ${
+                i === hover ? 'bg-rose-50 dark:bg-rose-950/40' : 'bg-transparent'
+              }`}
+            >
+              {a.photoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={a.photoUrl} alt={a.vendorCode}
+                  className="h-8 w-6 shrink-0 rounded object-cover" />
+              ) : (
+                <div className="grid h-8 w-6 shrink-0 place-items-center rounded bg-subtle text-[9px] text-muted-foreground">—</div>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-bold text-foreground">{a.vendorCode}</div>
+                <div className="truncate text-[10px] text-muted-foreground">
+                  {a.brand ?? '—'}{a.category ? ` · ${a.category}` : ''}
+                </div>
+              </div>
+              <span className="font-mono text-[10px] text-muted-foreground">{a.nmId}</span>
+            </button>
+          ))}
         </div>
       ) : null}
     </div>
