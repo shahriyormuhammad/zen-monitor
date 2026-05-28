@@ -16,11 +16,13 @@ import {
 import {
   addSupplyItem,
   addSupplyItemsBulk,
+  assembleSupplyFromPlan,
   clearSupplyItems,
   listProfilesForArticle,
   listSupplyItems,
   matchVendorCode,
   removeSupplyItem,
+  type AssembleArticleInput,
   type ProfileForDropdown,
   type SupplyItem,
   type SupplyItemInput,
@@ -28,6 +30,7 @@ import {
 import {
   buildShkAoa,
   buildSupplyAoa,
+  buildSupplyWorkbookByWarehouse,
   toXlsxBuffer,
   type ShkAoaResult,
   type SupplyAoaResult,
@@ -81,6 +84,16 @@ export async function addSupplyItemAction(
 export async function listSupplyItemsAction(tenantId: string): Promise<SupplyItem[]> {
   await requireTenantFeatureAccess(tenantId, 'supply');
   return listSupplyItems(tenantId);
+}
+
+export async function assembleSupplyFromPlanAction(
+  tenantId: string,
+  articles: AssembleArticleInput[],
+): Promise<{ added: SupplyItem[]; failed: { vendorCode: string; reason: string }[] }> {
+  await requireTenantFeatureAccess(tenantId, 'supply', ['owner', 'admin', 'manager']);
+  const result = await assembleSupplyFromPlan(tenantId, articles);
+  revalidatePath('/supply');
+  return result;
 }
 
 export async function removeSupplyItemAction(tenantId: string, id: string): Promise<void> {
@@ -182,6 +195,19 @@ export async function buildSupplyXlsxAction(tenantId: string): Promise<{ filenam
   if (summary.barcodesCount === 0) {
     throw new Error('Ни одного штрихкода — сначала подтяни размеры из WB в Настройках → Ростовки');
   }
+
+  // If any item is routed to a warehouse (assembled from План поставки),
+  // produce a multi-sheet workbook — one WB-ready sheet per warehouse.
+  const hasWarehouses = items.some((i) => i.warehouse);
+  if (hasWarehouses) {
+    const wbResult = await buildSupplyWorkbookByWarehouse(items);
+    return {
+      filename: `postavka_po_skladam_${dateStamp()}.xlsx`,
+      base64: wbResult.buffer.toString('base64'),
+      summary,
+    };
+  }
+
   const buffer = await toXlsxBuffer(summary.aoa, 'Поставка');
   return {
     filename: `postavka_${dateStamp()}.xlsx`,

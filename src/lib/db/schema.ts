@@ -2151,12 +2151,14 @@ export const supplyItems = pgTable('supply_items', {
   nmId: bigint('nm_id', { mode: 'number' }),
   profileId: uuid('profile_id').references(() => sizeProfiles.id, { onDelete: 'set null' }),
   profileName: varchar('profile_name', { length: 255 }),
+  /** Target WB warehouse — set when assembled from «План поставки». */
+  warehouse: varchar('warehouse', { length: 255 }),
   boxes: integer('boxes').default(1).notNull(),
   sumPerBox: integer('sum_per_box').default(0).notNull(),
   totalPieces: integer('total_pieces').default(0).notNull(),
   rows: jsonb('rows').$type<SupplyItemRow[]>().default(sql`'[]'::jsonb`).notNull(),
   missingBc: integer('missing_bc').default(0).notNull(),
-  /** 'manual' for Шаг 1 form, 'invoice' for Шаг 2 накладная bulk import. */
+  /** 'manual' for Шаг 1 form, 'invoice' for Шаг 2 накладная, 'plan' for План поставки. */
   source: varchar('source', { length: 32 }).default('manual').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

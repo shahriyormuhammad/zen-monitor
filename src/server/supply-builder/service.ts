@@ -33,12 +33,13 @@ export type SupplyItem = {
   nmId: number | null;
   profileId: string | null;
   profileName: string | null;
+  warehouse: string | null;
   boxes: number;
   sumPerBox: number;
   totalPieces: number;
   rows: SupplyItemRow[];
   missingBc: number;
-  source: 'manual' | 'invoice';
+  source: 'manual' | 'invoice' | 'plan';
   createdAt: Date;
   updatedAt: Date;
 };
@@ -100,10 +101,11 @@ export type SupplyItemInput = {
   nmId?: number | null;
   profileId?: string | null;
   profileName?: string | null;
+  warehouse?: string | null;
   boxes: number;
   /** Built from the chosen profile's sizes + boxes. */
   rows: SupplyItemRow[];
-  source?: 'manual' | 'invoice';
+  source?: 'manual' | 'invoice' | 'plan';
 };
 
 export async function addSupplyItem(tenantId: string, input: SupplyItemInput): Promise<SupplyItem> {
@@ -124,25 +126,24 @@ export async function addSupplyItem(tenantId: string, input: SupplyItemInput): P
   }
   const totalPieces = sumPerBox * boxes;
   const missingBc = rows.filter((r) => r.total > 0 && !r.barcode).length;
+  const warehouse = input.warehouse?.trim() || null;
 
   return withTenantContext(db, tenantId, async (tx) => {
-    // Dedup: same (vendorCode + profileId) → update existing row.
-    const existing = input.profileId
-      ? await tx.select({ id: supplyItems.id }).from(supplyItems).where(and(
-        eq(supplyItems.tenantId, tenantId),
-        eq(supplyItems.vendorCode, input.vendorCode.trim()),
-        eq(supplyItems.profileId, input.profileId),
-      )).limit(1)
-      : await tx.select({ id: supplyItems.id }).from(supplyItems).where(and(
-        eq(supplyItems.tenantId, tenantId),
-        eq(supplyItems.vendorCode, input.vendorCode.trim()),
-        isNull(supplyItems.profileId),
-      )).limit(1);
+    // Dedup: same (vendorCode + profileId + warehouse) → update existing row.
+    const conds = [
+      eq(supplyItems.tenantId, tenantId),
+      eq(supplyItems.vendorCode, input.vendorCode.trim()),
+      input.profileId ? eq(supplyItems.profileId, input.profileId) : isNull(supplyItems.profileId),
+      warehouse ? eq(supplyItems.warehouse, warehouse) : isNull(supplyItems.warehouse),
+    ];
+    const existing = await tx.select({ id: supplyItems.id }).from(supplyItems)
+      .where(and(...conds)).limit(1);
 
     if (existing[0]) {
       const [updated] = await tx.update(supplyItems).set({
         nmId: input.nmId ?? null,
         profileName: input.profileName ?? null,
+        warehouse,
         boxes,
         sumPerBox,
         totalPieces,
@@ -163,6 +164,7 @@ export async function addSupplyItem(tenantId: string, input: SupplyItemInput): P
       nmId: input.nmId ?? null,
       profileId: input.profileId ?? null,
       profileName: input.profileName ?? null,
+      warehouse,
       boxes,
       sumPerBox,
       totalPieces,
@@ -255,6 +257,54 @@ export async function matchVendorCode(
   });
 }
 
+/**
+ * Assemble a supply from «План поставки» distribution: for each
+ * (article, okrug-row) create/update a supply_item routed to that okrug's
+ * warehouse, sized to cover the okrug qty with the article's default
+ * ростовка (boxes = ceil(qty / totalPerBox)).
+ */
+export type AssembleArticleInput = {
+  vendorCode: string;
+  nmId: number | null;
+  legs: { warehouse: string; qty: number }[];
+};
+
+export async function assembleSupplyFromPlan(
+  tenantId: string,
+  articles: AssembleArticleInput[],
+): Promise<{ added: SupplyItem[]; failed: { vendorCode: string; reason: string }[] }> {
+  const added: SupplyItem[] = [];
+  const failed: { vendorCode: string; reason: string }[] = [];
+  for (const art of articles) {
+    const profiles = await listProfilesForArticle(tenantId, art.nmId, art.vendorCode);
+    if (profiles.length === 0) {
+      failed.push({ vendorCode: art.vendorCode, reason: 'нет ростовки' });
+      continue;
+    }
+    const profile = profiles.find((p) => p.isDefault) ?? profiles[0]!;
+    for (const leg of art.legs) {
+      if (!leg.warehouse || leg.qty <= 0) continue;
+      const boxes = Math.max(1, Math.ceil(leg.qty / Math.max(1, profile.totalPerBox)));
+      try {
+        const item = await addSupplyItem(tenantId, {
+          vendorCode: art.vendorCode,
+          nmId: art.nmId,
+          profileId: profile.id,
+          profileName: profile.name,
+          warehouse: leg.warehouse,
+          boxes,
+          rows: profile.rows,
+          source: 'plan',
+        });
+        added.push(item);
+      } catch (e) {
+        failed.push({ vendorCode: art.vendorCode, reason: e instanceof Error ? e.message : String(e) });
+      }
+    }
+  }
+  return { added, failed };
+}
+
 function toSupplyItem(row: typeof supplyItems.$inferSelect): SupplyItem {
   return {
     id: row.id,
@@ -262,12 +312,13 @@ function toSupplyItem(row: typeof supplyItems.$inferSelect): SupplyItem {
     nmId: row.nmId == null ? null : Number(row.nmId),
     profileId: row.profileId,
     profileName: row.profileName,
+    warehouse: row.warehouse ?? null,
     boxes: row.boxes,
     sumPerBox: row.sumPerBox,
     totalPieces: row.totalPieces,
     rows: Array.isArray(row.rows) ? row.rows : [],
     missingBc: row.missingBc,
-    source: row.source as 'manual' | 'invoice',
+    source: row.source as 'manual' | 'invoice' | 'plan',
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

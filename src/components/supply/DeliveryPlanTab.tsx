@@ -13,11 +13,13 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { ChevronDown, Loader2, PackageCheck, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { listSupplyArticlesAction, computeArticleDistributionAction } from
-  '@/app/(dashboard)/supply/actions';
+import {
+  listSupplyArticlesAction, computeArticleDistributionAction,
+  assembleSupplyFromPlanAction,
+} from '@/app/(dashboard)/supply/actions';
 import type { DistributionResult, SupplyStrategy } from '@/server/supply/distribution';
 import { ArticleAutocomplete } from './ArticleAutocomplete';
 import { DeficitClusters } from './DeficitClusters';
@@ -37,6 +39,7 @@ type PlannedItem = {
   pairsPerBox: number;
   totalQty: number;
   status: 'loading' | 'ok' | 'no-history' | 'no-article' | 'error';
+  basis: 'deficit' | 'demand' | null;
   distribution: DistributionResult['rows'];
   errorMessage?: string;
   expanded: boolean;
@@ -57,6 +60,7 @@ function fmtNum(n: number): string {
 /* ── Main component ─────────────────────────────── */
 
 export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
+  const queryClient = useQueryClient();
   const articlesQuery = useQuery({
     queryKey: ['supply-articles', tenantId],
     queryFn: () => listSupplyArticlesAction(tenantId),
@@ -64,6 +68,7 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
     staleTime: 60_000,
   });
   const articles = articlesQuery.data ?? [];
+  const [assembleOpen, setAssembleOpen] = useState(false);
 
   // Form state
   const [vc, setVc] = useState('');
@@ -97,7 +102,7 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
         );
         setItems((prev) =>
           prev.map((p) => p.id === item.id
-            ? { ...p, status: res.status, distribution: res.rows, errorMessage: undefined }
+            ? { ...p, status: res.status, basis: res.basis, distribution: res.rows, errorMessage: undefined }
             : p),
         );
       } catch (e) {
@@ -129,6 +134,7 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
         pairsPerBox: pairsNum,
         totalQty: boxesNum * pairsNum,
         status: 'no-article',
+        basis: null,
         distribution: [],
         expanded: false,
         selected: true,
@@ -148,6 +154,7 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
       pairsPerBox: pairsNum,
       totalQty,
       status: 'loading',
+      basis: null,
       distribution: [],
       expanded: true,
       selected: true,
@@ -160,7 +167,7 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
       const res = await computeArticleDistributionAction(tenantId, article.nmId, totalQty, strategy);
       setItems((prev) =>
         prev.map((p) => p.id === id
-          ? { ...p, status: res.status, distribution: res.rows }
+          ? { ...p, status: res.status, basis: res.basis, distribution: res.rows }
           : p),
       );
     } catch (e) {
@@ -192,6 +199,41 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
   const selectedCount = items.filter((i) => i.selected).length;
   const selectedBoxes = items.filter((i) => i.selected).reduce((s, i) => s + i.boxes, 0);
   const selectedTotal = items.filter((i) => i.selected).reduce((s, i) => s + i.totalQty, 0);
+
+  // Group selected items' distribution by warehouse for the assemble modal.
+  const assemblePlan = useMemo(() => {
+    const ready = items.filter((i) => i.selected && i.status === 'ok' && i.distribution.length > 0);
+    const byWarehouse = new Map<string, { vendorCode: string; nmId: number; qty: number }[]>();
+    const articlesPayload = new Map<number, { vendorCode: string; nmId: number; legs: { warehouse: string; qty: number }[] }>();
+    for (const item of ready) {
+      for (const row of item.distribution) {
+        const wh = row.warehouse || `${row.okrug} (склад не задан)`;
+        const list = byWarehouse.get(wh) ?? [];
+        list.push({ vendorCode: item.vendorCode, nmId: item.nmId, qty: row.qty });
+        byWarehouse.set(wh, list);
+
+        const ap = articlesPayload.get(item.nmId) ?? { vendorCode: item.vendorCode, nmId: item.nmId, legs: [] };
+        ap.legs.push({ warehouse: row.warehouse || '', qty: row.qty });
+        articlesPayload.set(item.nmId, ap);
+      }
+    }
+    const warehouses = Array.from(byWarehouse.entries())
+      .map(([warehouse, rows]) => ({
+        warehouse,
+        rows,
+        totalQty: rows.reduce((s, r) => s + r.qty, 0),
+      }))
+      .sort((a, b) => b.totalQty - a.totalQty);
+    return { warehouses, payload: Array.from(articlesPayload.values()), readyCount: ready.length };
+  }, [items]);
+
+  const assembleMutation = useMutation({
+    mutationFn: () => assembleSupplyFromPlanAction(tenantId, assemblePlan.payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supply-items', tenantId] });
+      setAssembleOpen(false);
+    },
+  });
 
   if (articlesQuery.isLoading) {
     return (
@@ -282,7 +324,7 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
               Запланированные артикулы <span className="ml-2 text-[12px] font-medium text-muted-foreground">{items.length}</span>
             </h3>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
-              Распределение считается только по нелокальным заказам (округа, где товара сейчас нет на складах).
+              Распределение «по дефициту»: коробки идут пропорционально нехватке (прогноз продаж − остаток) по каждому округу. Где остатка хватает — округ получает мало или ноль.
             </p>
           </div>
 
@@ -344,15 +386,119 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
             </button>
             <button
               type="button"
-              className="rounded-lg bg-rose-500 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-rose-600 disabled:opacity-40"
-              disabled
-              title="Будет в следующем деплое"
+              onClick={() => setAssembleOpen(true)}
+              disabled={assemblePlan.readyCount === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-rose-500 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-rose-600 disabled:opacity-40"
+              title={assemblePlan.readyCount === 0 ? 'Выбери артикулы с рассчитанным распределением' : 'Сгруппировать по складам и создать поставку'}
             >
-              Собрать поставку
+              <PackageCheck className="h-4 w-4" /> Собрать поставку
             </button>
           </div>
         </div>
       ) : null}
+
+      {/* ─ Assemble modal ─ */}
+      {assembleOpen ? (
+        <AssembleModal
+          plan={assemblePlan}
+          pending={assembleMutation.isPending}
+          error={assembleMutation.error instanceof Error ? assembleMutation.error.message : null}
+          result={assembleMutation.data ?? null}
+          onConfirm={() => assembleMutation.mutate()}
+          onClose={() => { setAssembleOpen(false); assembleMutation.reset(); }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/* ── Assemble modal ─────────────────────────────── */
+
+function AssembleModal({
+  plan, pending, error, result, onConfirm, onClose,
+}: {
+  plan: { warehouses: { warehouse: string; rows: { vendorCode: string; qty: number }[]; totalQty: number }[]; payload: unknown[]; readyCount: number };
+  pending: boolean;
+  error: string | null;
+  result: { added: { id: string }[]; failed: { vendorCode: string; reason: string }[] } | null;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm">
+      <div className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+        <div className="flex items-center justify-between border-b border-border bg-subtle/30 px-5 py-3">
+          <div>
+            <h3 className="text-[15px] font-extrabold">Собрать поставку</h3>
+            <p className="text-[11px] text-muted-foreground">
+              Будет создано <strong>{plan.warehouses.length}</strong> поставок по складам. Каждый артикул раскладывается на ростовку по умолчанию.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground" aria-label="Закрыть">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          {result ? (
+            <div className="space-y-2 text-[12px]">
+              <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-emerald-800 dark:border-emerald-700/40 dark:bg-emerald-950/30 dark:text-emerald-200">
+                ✓ Создано строк поставки: <strong>{result.added.length}</strong>. Открой «Шаг 1: Создать» — там список с разбивкой по складам, оттуда экспорт XLSX (отдельный лист на каждый склад).
+              </div>
+              {result.failed.length > 0 ? (
+                <div className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-rose-700 dark:border-rose-700/40 dark:bg-rose-950/40 dark:text-rose-300">
+                  Пропущено {result.failed.length}: {result.failed.map((f) => `${f.vendorCode} (${f.reason})`).join(', ')}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {plan.warehouses.map((wh) => (
+                <div key={wh.warehouse} className="rounded-xl border border-border bg-subtle/30 p-3">
+                  <div className="flex items-baseline justify-between">
+                    <strong className="text-[12.5px] text-foreground">{wh.warehouse}</strong>
+                    <span className="text-[11px] text-muted-foreground">{wh.rows.length} арт · <strong>{fmtNum(wh.totalQty)}</strong> шт</span>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1 text-[10.5px]">
+                    {wh.rows.map((r, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 rounded-md bg-card px-1.5 py-0.5 font-mono">
+                        {r.vendorCode} <span className="text-rose-600">{fmtNum(r.qty)}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {error ? (
+            <div className="mt-3 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-[12px] text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{error}</div>
+          ) : null}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border bg-subtle/30 px-5 py-3">
+          <button type="button" onClick={onClose} className="rounded-lg border border-border px-3 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">
+            {result ? 'Закрыть' : 'Отмена'}
+          </button>
+          {!result ? (
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={pending || plan.warehouses.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-rose-500 px-3 py-2 text-[12px] font-bold text-white hover:bg-rose-600 disabled:opacity-40"
+            >
+              {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="h-3.5 w-3.5" />}
+              Создать поставку
+            </button>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -460,15 +606,23 @@ function PlannedRow({
       {item.expanded && item.distribution.length > 0 ? (
         <tr className="border-t border-border bg-subtle/40">
           <td colSpan={8} className="px-3 py-3">
+            <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              {item.basis === 'deficit'
+                ? '🎯 По дефициту: чем больше нехватка в округе, тем больше коробок'
+                : item.basis === 'demand'
+                  ? '📊 По спросу: дефицита нет нигде — делим по доле заказов'
+                  : ''}
+            </div>
             <table className="w-full text-[11px]">
               <thead className="text-left text-muted-foreground">
                 <tr>
                   <th className="px-2 py-1">Округ</th>
                   <th className="px-2 py-1 text-right">Заказов</th>
+                  <th className="px-2 py-1 text-right">Остаток</th>
+                  <th className="px-2 py-1 text-right">Дефицит</th>
                   <th className="px-2 py-1 text-right">%</th>
-                  <th className="px-2 py-1 text-right">Распределено, шт</th>
+                  <th className="px-2 py-1 text-right">Везём, шт</th>
                   <th className="px-2 py-1">Склад</th>
-                  <th className="px-2 py-1 text-right">Тариф×</th>
                 </tr>
               </thead>
               <tbody>
@@ -476,18 +630,21 @@ function PlannedRow({
                   <tr key={row.okrug} className="border-t border-border/50">
                     <td className="px-2 py-1 font-bold text-foreground">{row.okrug}</td>
                     <td className="px-2 py-1 text-right font-mono">{fmtNum(row.orders)}</td>
+                    <td className="px-2 py-1 text-right font-mono text-muted-foreground">{fmtNum(row.stock)}</td>
+                    <td className="px-2 py-1 text-right font-mono font-bold text-rose-700">{fmtNum(row.need)}</td>
                     <td className="px-2 py-1 text-right font-mono">{(row.pct * 100).toFixed(1)}%</td>
                     <td className="px-2 py-1 text-right font-mono font-bold">{fmtNum(row.qty)}</td>
                     <td className="px-2 py-1">{row.warehouse}</td>
-                    <td className="px-2 py-1 text-right font-mono text-muted-foreground">{row.tariffCoef.toFixed(2)}</td>
                   </tr>
                 ))}
                 <tr className="border-t border-border bg-card/50 font-bold">
                   <td className="px-2 py-1">ИТОГО</td>
                   <td className="px-2 py-1 text-right font-mono">{fmtNum(item.distribution.reduce((s, r) => s + r.orders, 0))}</td>
+                  <td className="px-2 py-1 text-right font-mono">{fmtNum(item.distribution.reduce((s, r) => s + r.stock, 0))}</td>
+                  <td className="px-2 py-1 text-right font-mono">{fmtNum(item.distribution.reduce((s, r) => s + r.need, 0))}</td>
                   <td className="px-2 py-1 text-right font-mono">100%</td>
                   <td className="px-2 py-1 text-right font-mono">{fmtNum(item.distribution.reduce((s, r) => s + r.qty, 0))}</td>
-                  <td className="px-2 py-1" colSpan={2}>—</td>
+                  <td className="px-2 py-1">—</td>
                 </tr>
               </tbody>
             </table>

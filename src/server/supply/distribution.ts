@@ -1,8 +1,12 @@
 /**
- * Per-article distribution: aggregate orders by okrug (excluding окrugs that
- * already have stock — "local" zones) and pick warehouses by strategy.
+ * Per-article distribution across federal districts ("кластеры").
  *
- * Port of Postal's `computeDeliveryDistribution(nmId, totalQty, strategy)`.
+ * Strategy «по дефициту» (chosen by the user, May 2026): distribute the
+ * shipment proportional to each okrug's NEED, where
+ *     need(okrug) = max(0, ceil(sales/period × forecast) - stock)
+ * so districts that are already covered get little/zero and the gaps get
+ * the lion's share. Falls back to demand-share when nothing is in deficit
+ * (so the user still gets a sensible split).
  */
 
 import { sql } from 'drizzle-orm';
@@ -20,7 +24,13 @@ export type SupplyStrategy = 'speed' | 'cost';
 
 export type DistributionRow = {
   okrug: Okrug;
+  /** Orders in the sales window (demand signal). */
   orders: number;
+  /** Current stock units in this okrug. */
+  stock: number;
+  /** Forecast deficit = max(0, forecastSales - stock). */
+  need: number;
+  /** Share used for allocation (need-share, or demand-share fallback). */
   pct: number;
   qty: number;
   warehouse: string;
@@ -28,38 +38,35 @@ export type DistributionRow = {
 };
 
 export type DistributionResult =
-  | { status: 'ok'; rows: DistributionRow[] }
-  | { status: 'no-article'; rows: [] }
-  | { status: 'no-history'; rows: [] };
+  | { status: 'ok'; basis: 'deficit' | 'demand'; rows: DistributionRow[] }
+  | { status: 'no-article'; basis: null; rows: [] }
+  | { status: 'no-history'; basis: null; rows: [] };
 
-/**
- * Compute distribution of `totalQty` units across federal districts for one nmId.
- *
- * Rules (ported from Postal):
- *   1. Look up the article's orders by region (last `days` days).
- *   2. Look up which okrugs currently host stock for this nmId.
- *   3. Drop "local" regions (regions whose okrug is paired with a stock-holding okrug).
- *   4. Aggregate the remaining orders by okrug, treating SF/DF and Yu/SK as merged zones.
- *   5. Distribute totalQty proportionally to the okrug share (correcting the last row to match the sum).
- *   6. Pick a warehouse per okrug according to strategy (speed = main hub, cost = cheapest tariff).
- */
+/** Collapse paired okrugs (ЮФО+СКФО, СФО+ДФО) into the canonical first half. */
+function zoneOf(okrug: Okrug): Okrug {
+  const zones = OKRUG_ZONES[okrug] ?? [okrug];
+  return zones[0]!;
+}
+
 export async function computeDistributionAction(
   tenantId: string,
   nmId: number,
   totalQty: number,
   strategy: SupplyStrategy,
-  daysBack = 60,
+  opts?: { salesDays?: number; forecastDays?: number },
 ): Promise<DistributionResult> {
+  const salesDays = Math.max(7, Math.min(180, opts?.salesDays ?? 30));
+  const forecastDays = Math.max(7, Math.min(180, opts?.forecastDays ?? 30));
+
   return withTenantContext(db, tenantId, async (tx) => {
-    // Step 1: orders aggregated by detected okrug via oblast_okrug_name first,
-    // then region_name fallback.
+    // Sales by okrug over the window.
     const ordersRes = await tx.execute(sql`
       SELECT oblast_okrug_name, region_name, COUNT(*)::int AS cnt
       FROM raw_api_orders
       WHERE tenant_id = ${tenantId}
         AND nm_id = ${nmId}
         AND is_cancel = false
-        AND date >= NOW() - (${daysBack} || ' days')::interval
+        AND date >= NOW() - (${salesDays} || ' days')::interval
       GROUP BY oblast_okrug_name, region_name
     `);
     const orderRows = ordersRes as unknown as Array<{
@@ -67,12 +74,11 @@ export async function computeDistributionAction(
       region_name: string | null;
       cnt: number;
     }>;
-
     if (orderRows.length === 0) {
-      return { status: 'no-history', rows: [] };
+      return { status: 'no-history', basis: null, rows: [] };
     }
 
-    // Step 2: which okrugs currently hold stock?
+    // Current stock by okrug.
     const stocksRes = await tx.execute(sql`
       SELECT warehouse_name, SUM(amount)::int AS qty
       FROM raw_api_stocks
@@ -82,55 +88,70 @@ export async function computeDistributionAction(
       GROUP BY warehouse_name
       HAVING SUM(amount) > 0
     `);
-    const stockRows = stocksRes as unknown as Array<{
-      warehouse_name: string | null;
-      qty: number;
-    }>;
-    const stockOkrugs = new Set<Okrug>();
+    const stockRows = stocksRes as unknown as Array<{ warehouse_name: string | null; qty: number }>;
+
+    const salesByOkrug = new Map<Okrug, number>();
+    for (const o of orderRows) {
+      const okrug = getOkrugForRegion(o.oblast_okrug_name) ?? getOkrugForRegion(o.region_name);
+      if (!okrug) continue;
+      const zone = zoneOf(okrug);
+      salesByOkrug.set(zone, (salesByOkrug.get(zone) ?? 0) + o.cnt);
+    }
+    if (salesByOkrug.size === 0) {
+      return { status: 'no-history', basis: null, rows: [] };
+    }
+
+    const stockByOkrug = new Map<Okrug, number>();
     for (const r of stockRows) {
       const federal = warehouseToOkrug(r.warehouse_name);
-      if (federal) {
-        for (const zone of OKRUG_ZONES[federal] ?? [federal]) {
-          stockOkrugs.add(zone);
-        }
-      }
+      if (!federal) continue;
+      const zone = zoneOf(federal);
+      stockByOkrug.set(zone, (stockByOkrug.get(zone) ?? 0) + r.qty);
     }
 
-    // Step 3+4: aggregate non-local orders by okrug.
-    const byOkrug = new Map<Okrug, number>();
-    for (const o of orderRows) {
-      const okrug =
-        getOkrugForRegion(o.oblast_okrug_name)
-        ?? getOkrugForRegion(o.region_name);
-      if (!okrug) continue;
-      if (stockOkrugs.has(okrug)) continue; // local — товар уже доезжает
-      const zones = OKRUG_ZONES[okrug] ?? [okrug];
-      // Aggregate into the first zone of the pair so СФО+ДФО don't double-count.
-      const zoneKey = zones[0]!;
-      byOkrug.set(zoneKey, (byOkrug.get(zoneKey) ?? 0) + o.cnt);
+    // Build per-okrug {orders, stock, need}.
+    type Acc = { okrug: Okrug; orders: number; stock: number; need: number };
+    const accs: Acc[] = [];
+    for (const [okrug, orders] of salesByOkrug.entries()) {
+      const stock = stockByOkrug.get(okrug) ?? 0;
+      const forecastSales = Math.ceil((orders / salesDays) * forecastDays);
+      const need = Math.max(0, forecastSales - stock);
+      accs.push({ okrug, orders, stock, need });
     }
 
-    if (byOkrug.size === 0) {
-      return { status: 'no-history', rows: [] };
+    // Allocation basis: deficit if any need > 0, else demand.
+    const totalNeed = accs.reduce((s, a) => s + a.need, 0);
+    const totalOrders = accs.reduce((s, a) => s + a.orders, 0);
+    const basis: 'deficit' | 'demand' = totalNeed > 0 ? 'deficit' : 'demand';
+    const weightOf = (a: Acc) => (basis === 'deficit' ? a.need : a.orders);
+    const totalWeight = basis === 'deficit' ? totalNeed : totalOrders;
+
+    // Only keep okrugs that carry weight (deficit basis drops covered ones).
+    const active = accs.filter((a) => weightOf(a) > 0).sort((x, y) => weightOf(y) - weightOf(x));
+    if (active.length === 0) {
+      return { status: 'no-history', basis: null, rows: [] };
     }
 
-    const totalOrders = Array.from(byOkrug.values()).reduce((s, n) => s + n, 0);
-    const entries = Array.from(byOkrug.entries())
-      .sort((a, b) => b[1] - a[1]); // top okrugs first
-
-    // Step 5: proportional allocation, ensure sum equals totalQty.
-    const rows: DistributionRow[] = entries.map(([okrug, orders]) => {
-      const pct = orders / totalOrders;
-      const qty = Math.round(totalQty * pct);
-      return { okrug, orders, pct, qty, warehouse: '', tariffCoef: 0 };
+    const rows: DistributionRow[] = active.map((a) => {
+      const pct = weightOf(a) / totalWeight;
+      return {
+        okrug: a.okrug,
+        orders: a.orders,
+        stock: a.stock,
+        need: a.need,
+        pct,
+        qty: Math.round(totalQty * pct),
+        warehouse: '',
+        tariffCoef: 0,
+      };
     });
+
+    // Drift correction so the qty sums to exactly totalQty.
     const assigned = rows.reduce((s, r) => s + r.qty, 0);
     const drift = totalQty - assigned;
-    if (rows.length > 0 && drift !== 0) {
-      rows[0]!.qty += drift; // correct the biggest okrug
-    }
+    if (rows.length > 0 && drift !== 0) rows[0]!.qty += drift;
 
-    // Step 6: warehouses by strategy.
+    // Warehouse pick by strategy.
     for (const r of rows) {
       const pick = strategy === 'cost'
         ? cheapestWarehouseInOkrug(r.okrug)
@@ -141,6 +162,6 @@ export async function computeDistributionAction(
       }
     }
 
-    return { status: 'ok', rows };
+    return { status: 'ok', basis, rows };
   });
 }

@@ -339,6 +339,14 @@ function SupplyItemRow({ item, idx, onRemove }: { item: SupplyItem; idx: number;
           {item.source === 'invoice' ? (
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">из накладной</span>
           ) : null}
+          {item.source === 'plan' ? (
+            <span className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-bold text-teal-800 dark:bg-teal-950 dark:text-teal-300">из плана</span>
+          ) : null}
+          {item.warehouse ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
+              🏭 {item.warehouse}
+            </span>
+          ) : null}
         </div>
         <div className="mt-1 text-[11px] text-muted-foreground">
           {item.boxes} {plural(item.boxes, 'коробка', 'коробки', 'коробок')} · {item.sumPerBox} пар/кор · <strong>{fmtNum(item.totalPieces)} шт</strong>

@@ -131,32 +131,75 @@ export async function toXlsxBuffer(
   sheetName: string,
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet(sheetName);
+  addAoaSheet(wb, aoa, sheetName);
+  const arrayBuffer = await wb.xlsx.writeBuffer();
+  return Buffer.from(arrayBuffer);
+}
 
-  // Wide-ish columns; both export sheets stay around 4 columns max.
+/** Sanitise a string into a valid (<=31 char, no []/*?:\/) Excel sheet name. */
+function sheetSafe(name: string): string {
+  return name.replace(/[\\/?*[\]:]/g, ' ').trim().slice(0, 31) || 'Лист';
+}
+
+function addAoaSheet(wb: ExcelJS.Workbook, aoa: Array<Array<string | number>>, sheetName: string): void {
+  const ws = wb.addWorksheet(sheetSafe(sheetName));
   ws.columns = aoa[0]!.map((header) => ({
     header: String(header),
     width: typeof header === 'string' && header.includes('Кол-во') ? 14 : 22,
   }));
-
   for (let i = 1; i < aoa.length; i++) {
     const row = aoa[i]!;
     const xlRow = ws.addRow(row);
-    // Force the barcode column to be text — Excel would otherwise mangle
-    // long digit strings into scientific notation.
     const bcCell = xlRow.getCell(1);
     bcCell.numFmt = '@';
     bcCell.value = String(row[0] ?? '');
-    // Optional 3rd column (ШК короба) — same text treatment.
     if (row.length >= 3) {
       const shkCell = xlRow.getCell(3);
       shkCell.numFmt = '@';
       shkCell.value = String(row[2] ?? '');
     }
   }
-
   ws.getRow(1).font = { bold: true };
+}
+
+/**
+ * Multi-sheet supply workbook: one sheet per warehouse (named by the
+ * warehouse) plus an "Все склады" summary sheet. Used when supply_items
+ * carry a `warehouse` (assembled from План поставки). Each sheet is the
+ * WB-ready [Баркод, Кол-во].
+ */
+export async function buildSupplyWorkbookByWarehouse(items: SupplyItem[]): Promise<{
+  buffer: Buffer;
+  sheets: { warehouse: string; barcodes: number; units: number }[];
+}> {
+  const byWarehouse = new Map<string, SupplyItem[]>();
+  for (const item of items) {
+    const wh = item.warehouse?.trim() || 'Без склада';
+    const list = byWarehouse.get(wh) ?? [];
+    list.push(item);
+    byWarehouse.set(wh, list);
+  }
+
+  const wb = new ExcelJS.Workbook();
+  // Summary first.
+  const allAoa = buildSupplyAoa(items).aoa;
+  addAoaSheet(wb, allAoa, 'Все склады');
+
+  const sheets: { warehouse: string; barcodes: number; units: number }[] = [];
+  // Stable order: biggest warehouses first.
+  const ordered = Array.from(byWarehouse.entries()).sort(
+    (a, b) => b[1].reduce((s, i) => s + i.totalPieces, 0) - a[1].reduce((s, i) => s + i.totalPieces, 0),
+  );
+  for (const [warehouse, whItems] of ordered) {
+    const res = buildSupplyAoa(whItems);
+    addAoaSheet(wb, res.aoa, warehouse);
+    sheets.push({
+      warehouse,
+      barcodes: res.barcodesCount,
+      units: whItems.reduce((s, i) => s + i.totalPieces, 0),
+    });
+  }
 
   const arrayBuffer = await wb.xlsx.writeBuffer();
-  return Buffer.from(arrayBuffer);
+  return { buffer: Buffer.from(arrayBuffer), sheets };
 }
