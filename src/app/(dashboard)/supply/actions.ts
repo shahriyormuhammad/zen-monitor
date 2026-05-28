@@ -10,6 +10,10 @@ import {
   type SupplyStrategy,
 } from '@/server/supply/distribution';
 import {
+  computeDeficitTable,
+  type DeficitResult,
+} from '@/server/supply/deficit';
+import {
   addSupplyItem,
   addSupplyItemsBulk,
   clearSupplyItems,
@@ -42,6 +46,15 @@ export async function computeArticleDistributionAction(
 ): Promise<DistributionResult> {
   await requireTenantFeatureAccess(tenantId, 'supply');
   return computeDistributionAction(tenantId, nmId, totalQty, strategy);
+}
+
+export async function loadDeficitTableAction(
+  tenantId: string,
+  periodDays: number,
+  forecastDays: number,
+): Promise<DeficitResult> {
+  await requireTenantFeatureAccess(tenantId, 'supply');
+  return computeDeficitTable(tenantId, { periodDays, forecastDays });
 }
 
 /* ── Supply list (Шаг 1 + 2 + 3 shared storage) ─────────── */

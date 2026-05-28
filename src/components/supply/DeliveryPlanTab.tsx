@@ -20,6 +20,7 @@ import { listSupplyArticlesAction, computeArticleDistributionAction } from
   '@/app/(dashboard)/supply/actions';
 import type { DistributionResult, SupplyStrategy } from '@/server/supply/distribution';
 import { ArticleAutocomplete } from './ArticleAutocomplete';
+import { DeficitClusters } from './DeficitClusters';
 
 /* ── Types ─────────────────────────────────────── */
 
@@ -323,6 +324,9 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
           Список пуст. Добавь артикул, и система предложит распределение по округам.
         </div>
       )}
+
+      {/* ─ Дефицит по кластерам ─ */}
+      <DeficitClusters tenantId={tenantId} />
 
       {/* ─ Sticky bottom bar ─ */}
       {selectedCount > 0 ? (
