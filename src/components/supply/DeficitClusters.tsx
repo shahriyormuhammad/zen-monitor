@@ -63,31 +63,34 @@ export function DeficitClusters({ tenantId }: { tenantId: string }) {
 
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    let list = q ? rows.filter((r) =>
+    const base = q ? rows.filter((r) =>
       r.vendorCode.toLowerCase().includes(q)
       || (r.brand ?? '').toLowerCase().includes(q)
       || String(r.nmId).includes(q)
     ) : rows;
-    // Recompute "topNeed" against active okrugs only — what's the point of
-    // ranking by need if some of those okrugs are filtered out?
-    list = list.map((r) => {
-      let topNeed = 0;
-      for (const okrug of activeOkrugs) {
-        const cell = r.byOkrug[okrug];
-        if (cell && cell.need > topNeed) topNeed = cell.need;
-      }
-      return { ...r, _activeNeed: list && topNeed > 0 ? topNeed : r.overall.need };
-    });
-    return list;
+    // Sum need across ONLY the active okrug chips, then sort by it — so
+    // filtering to e.g. just ДФО re-ranks the table by ДФО deficit.
+    return base
+      .map((r) => {
+        let activeNeed = 0;
+        for (const okrug of activeOkrugs) {
+          const cell = r.byOkrug[okrug as keyof typeof r.byOkrug];
+          if (cell) activeNeed += cell.need;
+        }
+        return { row: r, activeNeed };
+      })
+      .sort((a, b) => b.activeNeed - a.activeNeed)
+      .map((x) => ({ ...x.row, activeNeed: x.activeNeed }));
   }, [rows, search, activeOkrugs]);
 
   const addMutation = useMutation({
-    mutationFn: async (row: DeficitRow) => {
-      // Pick the default profile and ship 1 box (8 pairs by default).
+    mutationFn: async ({ row, need }: { row: DeficitRow; need: number }) => {
+      // Pick the default profile, ship enough boxes to cover the need
+      // visible under the current okrug filter.
       const profiles = await listProfilesForArticleAction(tenantId, row.nmId, row.vendorCode);
       if (profiles.length === 0) throw new Error(`Нет ростовки у ${row.vendorCode}`);
       const profile = profiles.find((p) => p.isDefault) ?? profiles[0]!;
-      const boxes = Math.max(1, Math.ceil(row.overall.need / Math.max(1, profile.totalPerBox)));
+      const boxes = Math.max(1, Math.ceil(need / Math.max(1, profile.totalPerBox)));
       return addSupplyItemAction(tenantId, {
         vendorCode: row.vendorCode,
         nmId: row.nmId,
@@ -253,12 +256,12 @@ export function DeficitClusters({ tenantId }: { tenantId: string }) {
                     </div>
                   </td>
                   <td className="px-2 py-1.5 text-right">
-                    {row.overall.need > 0 ? (
-                      <span className="font-mono font-bold text-rose-700">{fmtNum(row.overall.need)}</span>
+                    {row.activeNeed > 0 ? (
+                      <span className="font-mono font-bold text-rose-700">{fmtNum(row.activeNeed)}</span>
                     ) : (
                       <span className="font-mono text-muted-foreground">0</span>
                     )}
-                    {row.topNeedOkrug && row.overall.need > 0 ? (
+                    {row.topNeedOkrug && row.activeNeed > 0 ? (
                       <div className="text-[9.5px] text-muted-foreground">{row.topNeedOkrug}</div>
                     ) : null}
                   </td>
@@ -269,10 +272,10 @@ export function DeficitClusters({ tenantId }: { tenantId: string }) {
                   <td className="px-2 py-1.5 text-right">
                     <button
                       type="button"
-                      disabled={isAdding || row.overall.need === 0}
-                      onClick={() => { setAdding(row.nmId); addMutation.mutate(row); }}
+                      disabled={isAdding || row.activeNeed === 0}
+                      onClick={() => { setAdding(row.nmId); addMutation.mutate({ row, need: row.activeNeed }); }}
                       className="inline-flex h-7 items-center gap-1 rounded-md border border-border bg-card px-2 text-[10.5px] font-bold text-foreground hover:border-rose-400 disabled:opacity-30"
-                      title={row.overall.need === 0 ? 'Дефицита нет' : 'Добавить в список поставки'}
+                      title={row.activeNeed === 0 ? 'Дефицита нет' : 'Добавить в список поставки'}
                     >
                       {isAdding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
                       В план

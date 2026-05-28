@@ -196,3 +196,115 @@ export function warehousesInOkrug(okrug: Okrug): { name: string; tariffCoef: num
     .filter(([, info]) => zones.includes(info.federal))
     .map(([name, info]) => ({ name, tariffCoef: info.tariffCoef }));
 }
+
+/* ──────────────────────────────────────────────────────────────────────
+ * Robust warehouse → okrug resolution.
+ *
+ * Reality check (May 2026, live DB): WB warehouse names DON'T match the
+ * Postal WAREHOUSE_TARIFFS keys. They come city-based with " WB" / "СЦ "
+ * / "СК " noise: "Тула", "Воронеж WB", "Екатеринбург - Перспективная 14",
+ * "СЦ Хабаровск". Exact-key lookup silently dropped ~40% of stock, so the
+ * deficit table over-counted need.
+ *
+ * Strategy: normalise the name, then match against a city → okrug map by
+ * substring. This is the single source of truth for "which district does
+ * this warehouse belong to".
+ * ────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Pseudo / non-WB-FBO warehouse names that must NOT contribute to okrug
+ * stock: aggregate rows ("WB summary", "Остальные") would double-count;
+ * seller-own ("склад продавца …") isn't a WB warehouse.
+ */
+const PSEUDO_WAREHOUSES = ['wb summary', 'остальные', 'склад продавца'];
+
+/**
+ * City keyword → okrug. Keys are lowercase substrings checked against the
+ * normalised warehouse name. Order matters only where one key is a prefix
+ * of another (none currently conflict). Covers every warehouse observed in
+ * production plus common WB FBO locations.
+ */
+const WAREHOUSE_CITY_OKRUG: Array<[string, Okrug]> = [
+  // ЦФО
+  ['коледино', 'ЦФО'], ['подольск', 'ЦФО'], ['электросталь', 'ЦФО'],
+  ['белые столбы', 'ЦФО'], ['белая дача', 'ЦФО'], ['истра', 'ЦФО'],
+  ['чашниково', 'ЦФО'], ['внуково', 'ЦФО'], ['вёшки', 'ЦФО'], ['вешки', 'ЦФО'],
+  ['радумля', 'ЦФО'], ['пушкино', 'ЦФО'], ['софьино', 'ЦФО'], ['сабурово', 'ЦФО'],
+  ['тула', 'ЦФО'], ['алексин', 'ЦФО'], ['рязань', 'ЦФО'], ['владимир', 'ЦФО'],
+  ['воронеж', 'ЦФО'], ['котовск', 'ЦФО'], ['тамбов', 'ЦФО'], ['тверь', 'ЦФО'],
+  ['эммаусское', 'ЦФО'], ['смоленск', 'ЦФО'], ['курск', 'ЦФО'], ['липецк', 'ЦФО'],
+  ['брянск', 'ЦФО'], ['ярославль', 'ЦФО'], ['белгород', 'ЦФО'], ['калуга', 'ЦФО'],
+  ['орёл', 'ЦФО'], ['иваново', 'ЦФО'], ['кострома', 'ЦФО'], ['москва', 'ЦФО'],
+  // СЗФО
+  ['шушары', 'СЗФО'], ['санкт-петербург', 'СЗФО'], ['спб', 'СЗФО'],
+  ['уткина заводь', 'СЗФО'], ['обухово', 'СЗФО'], ['псков', 'СЗФО'],
+  ['вологда', 'СЗФО'], ['череповец', 'СЗФО'], ['сыктывкар', 'СЗФО'],
+  ['мурманск', 'СЗФО'], ['архангельск', 'СЗФО'], ['калининград', 'СЗФО'],
+  ['новгород ', 'СЗФО'], ['петрозаводск', 'СЗФО'],
+  // ЮФО
+  ['краснодар', 'ЮФО'], ['волгоград', 'ЮФО'], ['ростов', 'ЮФО'],
+  ['адыгея', 'ЮФО'], ['крым', 'ЮФО'], ['симферополь', 'ЮФО'],
+  ['севастополь', 'ЮФО'], ['астрахань', 'ЮФО'], ['крыловская', 'ЮФО'],
+  ['тихорецк', 'ЮФО'], ['сальск', 'ЮФО'],
+  // СКФО
+  ['невинномысск', 'СКФО'], ['пятигорск', 'СКФО'], ['этока', 'СКФО'],
+  ['махачкала', 'СКФО'], ['ставрополь', 'СКФО'], ['минеральные воды', 'СКФО'],
+  ['нальчик', 'СКФО'], ['грозный', 'СКФО'], ['владикавказ', 'СКФО'],
+  // ПФО
+  ['казань', 'ПФО'], ['новосемейкино', 'ПФО'], ['самара', 'ПФО'],
+  ['сарапул', 'ПФО'], ['ижевск', 'ПФО'], ['пенза', 'ПФО'], ['кузнецк', 'ПФО'],
+  ['оренбург', 'ПФО'], ['пермь', 'ПФО'], ['нижний новгород', 'ПФО'],
+  ['ларина', 'ПФО'], ['киров', 'ПФО'], ['уфа', 'ПФО'], ['саратов', 'ПФО'],
+  ['ульяновск', 'ПФО'], ['чебоксары', 'ПФО'], ['йошкар', 'ПФО'],
+  ['саранск', 'ПФО'], ['тольятти', 'ПФО'],
+  // УФО
+  ['екатеринбург', 'УФО'], ['перспективн', 'УФО'], ['испытателей', 'УФО'],
+  ['челябинск', 'УФО'], ['тюмень', 'УФО'], ['сургут', 'УФО'],
+  ['нижний тагил', 'УФО'], ['курган', 'УФО'], ['магнитогорск', 'УФО'],
+  ['ханты-мансийск', 'УФО'],
+  // СФО
+  ['новосибирск', 'СФО'], ['омск', 'СФО'], ['барнаул', 'СФО'],
+  ['кемерово', 'СФО'], ['новокузнецк', 'СФО'], ['томск', 'СФО'],
+  ['красноярск', 'СФО'], ['абакан', 'СФО'], ['иркутск', 'СФО'], ['братск', 'СФО'],
+  // ДФО
+  ['владивосток', 'ДФО'], ['хабаровск', 'ДФО'], ['артём', 'ДФО'], ['артем', 'ДФО'],
+  ['белогорск', 'ДФО'], ['чита', 'ДФО'], ['благовещенск', 'ДФО'],
+  ['якутск', 'ДФО'], ['улан-удэ', 'ДФО'],
+  // СНГ
+  ['атакент', 'KZ'], ['алматы', 'KZ'], ['астана', 'KZ'], ['караганд', 'KZ'],
+  ['актобе', 'KZ'], ['шымкент', 'KZ'],
+  ['ереван', 'AM'], ['арташисян', 'AM'],
+];
+
+/** Strip WB-specific noise from a warehouse name before matching. */
+function normaliseWarehouse(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\bwb\b/g, '')        // " WB" suffix
+    .replace(/\bсц\b/g, '')        // "СЦ " (сортировочный центр)
+    .replace(/\bск\b/g, '')        // "СК " (склад)
+    .replace(/склад продавца/g, 'склад продавца') // keep, handled as pseudo
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Resolve a WB warehouse name to its okrug. Returns null for pseudo
+ * warehouses (aggregate rows, seller-own) and genuinely unknown names.
+ */
+export function warehouseToOkrug(name: string | null | undefined): Okrug | null {
+  if (!name) return null;
+  const raw = name.toLowerCase();
+  for (const pseudo of PSEUDO_WAREHOUSES) {
+    if (raw.includes(pseudo)) return null;
+  }
+  const norm = normaliseWarehouse(name);
+  if (!norm) return null;
+  for (const [city, okrug] of WAREHOUSE_CITY_OKRUG) {
+    if (norm.includes(city)) return okrug;
+  }
+  // Last-chance: maybe it matches a tariff-dict key directly.
+  const tariff = WAREHOUSE_TARIFFS[name];
+  if (tariff) return tariff.federal;
+  return null;
+}

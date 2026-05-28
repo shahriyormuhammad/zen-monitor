@@ -9,10 +9,10 @@ import { sql } from 'drizzle-orm';
 import { db, withTenantContext } from '@/lib/db';
 import {
   OKRUG_ZONES,
-  WAREHOUSE_TARIFFS,
   cheapestWarehouseInOkrug,
   fastestWarehouseInOkrug,
   getOkrugForRegion,
+  warehouseToOkrug,
   type Okrug,
 } from './geography';
 
@@ -88,9 +88,9 @@ export async function computeDistributionAction(
     }>;
     const stockOkrugs = new Set<Okrug>();
     for (const r of stockRows) {
-      const wh = r.warehouse_name && WAREHOUSE_TARIFFS[r.warehouse_name];
-      if (wh) {
-        for (const zone of OKRUG_ZONES[wh.federal] ?? [wh.federal]) {
+      const federal = warehouseToOkrug(r.warehouse_name);
+      if (federal) {
+        for (const zone of OKRUG_ZONES[federal] ?? [federal]) {
           stockOkrugs.add(zone);
         }
       }

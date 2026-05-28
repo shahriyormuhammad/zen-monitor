@@ -19,8 +19,8 @@ import { sql } from 'drizzle-orm';
 import { db, withTenantContext } from '@/lib/db';
 import {
   OKRUG_ZONES,
-  WAREHOUSE_TARIFFS,
   getOkrugForRegion,
+  warehouseToOkrug,
   type Okrug,
 } from './geography';
 
@@ -145,9 +145,9 @@ export async function computeDeficitTable(
     }
     for (const row of stockRows) {
       const nm = Number(row.nm_id);
-      const wh = row.warehouse_name && WAREHOUSE_TARIFFS[row.warehouse_name];
-      if (!wh) continue;
-      const zone = zoneOf(wh.federal);
+      const federal = warehouseToOkrug(row.warehouse_name);
+      if (!federal) continue;
+      const zone = zoneOf(federal);
       const bucket = getBucket(nm);
       bucket.stock.set(zone, (bucket.stock.get(zone) ?? 0) + row.qty);
     }
