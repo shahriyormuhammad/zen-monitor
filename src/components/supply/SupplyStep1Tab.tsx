@@ -21,6 +21,7 @@ import {
   buildSupplyXlsxAction,
 } from '@/app/(dashboard)/supply/actions';
 import type { ProfileForDropdown, SupplyItem } from '@/server/supply-builder/service';
+import { ArticleAutocomplete } from './ArticleAutocomplete';
 
 type Article = Awaited<ReturnType<typeof listSupplyArticlesAction>>[number];
 
@@ -175,18 +176,13 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
 
         <div className="mt-4 grid gap-3 sm:grid-cols-[1.4fr_1fr_1fr_0.7fr]">
           <Field label="Артикул продавца">
-            <input
+            <ArticleAutocomplete
               value={vc}
-              onChange={(e) => { setVc(e.target.value); setNm(''); }}
+              onChange={(v) => { setVc(v); setNm(''); }}
+              articles={articles}
               placeholder="напр. A519-2 ТН-10"
               className="h-9 w-full rounded-lg border border-border bg-card px-3 text-[12px] outline-none focus:border-rose-400"
-              list="step1-vc-list"
             />
-            <datalist id="step1-vc-list">
-              {articles.map((a) => (
-                <option key={a.nmId} value={a.vendorCode}>{a.brand ?? ''}{a.category ? ` · ${a.category}` : ''}</option>
-              ))}
-            </datalist>
           </Field>
           <Field label="Артикул WB (nmId)">
             <input

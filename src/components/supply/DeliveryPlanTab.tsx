@@ -19,6 +19,7 @@ import { useQuery } from '@tanstack/react-query';
 import { listSupplyArticlesAction, computeArticleDistributionAction } from
   '@/app/(dashboard)/supply/actions';
 import type { DistributionResult, SupplyStrategy } from '@/server/supply/distribution';
+import { ArticleAutocomplete } from './ArticleAutocomplete';
 
 /* ── Types ─────────────────────────────────────── */
 
@@ -210,18 +211,13 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
 
         <div className="mt-4 grid gap-3 sm:grid-cols-[1.4fr_1fr_0.6fr_0.6fr]">
           <Field label="Артикул продавца">
-            <input
+            <ArticleAutocomplete
               value={vc}
-              onChange={(e) => setVc(e.target.value)}
+              onChange={setVc}
+              articles={articles}
               placeholder="напр. A519-2 ТН-10"
               className="h-9 w-full rounded-lg border border-border bg-card px-3 text-[12px] text-foreground outline-none focus:border-rose-400"
-              list="dp-vc-list"
             />
-            <datalist id="dp-vc-list">
-              {articles.map((a) => (
-                <option key={a.nmId} value={a.vendorCode}>{a.brand ?? ''}{a.category ? ` · ${a.category}` : ''}</option>
-              ))}
-            </datalist>
           </Field>
           <Field label="Артикул WB (nmId)">
             <input
