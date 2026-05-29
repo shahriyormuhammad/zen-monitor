@@ -6,10 +6,15 @@ import { resolveLocalityIndexMultiplierFromLocalization } from "@/components/eco
 
 const TARGET_COVERAGE_DAYS = 14;
 const FORECAST_HORIZON_DAYS = 14;
-const MIN_TRANSFER_UNITS = 3;
-const MIN_ORDERS_PER_SKU = 5;
-const MAX_RECOMMENDATIONS = 200;
-const MIN_LOCAL_SHARE_DELTA_PCT = 0.1;
+// Минимум 2 пары в перемещении (WB всё равно не даёт возить поштучно мелочь).
+const MIN_TRANSFER_UNITS = 2;
+// Порог «значимости» SKU+размера — понижен 5→3, чтобы покрыть длинный хвост
+// размеров, которые тоже продаются и тоже создают дефицит в регионах.
+const MIN_ORDERS_PER_SKU = 3;
+const MAX_RECOMMENDATIONS = 500;
+// Минимальный прирост локализации, чтобы маршрут попал в заявку. Понижен
+// 0.1→0.03: даже небольшой прирост на дальнем округе суммарно копит ИЛ.
+const MIN_LOCAL_SHARE_DELTA_PCT = 0.03;
 
 type MatrixCellRuntime = {
   officeKey: string;
