@@ -75,3 +75,17 @@ export async function getRobotSessionStatus(tenantId: string): Promise<RobotSess
     phone: row.phone,
   };
 }
+
+import {
+  getLocalizationBreakdown,
+  type LocalizationBreakdown,
+} from '@/server/analytics/localization-breakdown';
+
+/** «Индекс локализации»: per-article local share + logistics impact. */
+export async function loadLocalizationBreakdownAction(
+  tenantId: string,
+  windowDays = 91,
+): Promise<LocalizationBreakdown> {
+  await requireTenantAccess(tenantId);
+  return getLocalizationBreakdown(tenantId, windowDays);
+}

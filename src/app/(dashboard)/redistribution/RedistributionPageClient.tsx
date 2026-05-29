@@ -34,6 +34,7 @@ import type {
 
 import { exportRedistributionXlsx } from './redistributionExport';
 import { getRobotSessionStatus, type RobotSessionStatus } from './actions';
+import { LocalizationView } from './LocalizationView';
 
 const PAGE_SIZE = 20;
 
@@ -972,6 +973,8 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
   const [manualSubmitMessage, setManualSubmitMessage] = useState<string | null>(null);
   // Горизонт WB-пересчёта индекса (скользящее окно 13 недель).
   const [horizonWeeks, setHorizonWeeks] = useState<1 | 13>(13);
+  // Активная вкладка раздела: рекомендации / индекс локализации.
+  const [redistView, setRedistView] = useState<'recs' | 'localization'>('recs');
 
   const sortedRecommendations = useMemo(() => {
     const recs = planQuery.data?.recommendations ?? [];
@@ -1350,6 +1353,37 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
         </div>
       )}
 
+      {/* Вкладки: Рекомендации / Индекс локализации */}
+      <div className="flex flex-wrap gap-2">
+        {([
+          { key: 'recs', label: 'Рекомендации по распределению' },
+          { key: 'localization', label: 'Индекс локализации' },
+        ] as const).map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setRedistView(t.key)}
+            className={`rounded-xl border px-3 py-2 text-[12px] font-bold transition-colors ${
+              redistView === t.key
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200'
+                : 'border-border bg-card text-foreground hover:border-emerald-300'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {redistView === 'localization' ? (
+        tenantId ? (
+          <LocalizationView
+            tenantId={tenantId}
+            projectedLocalSharePct={displaySimulatedLocal}
+            projectedKtr={resolveKtrFromLocalization(displaySimulatedLocal)}
+          />
+        ) : null
+      ) : (
+      <>
       {/* Robot status */}
       {robot ? (
         <RobotStatusBlock status={robot} />
@@ -1452,6 +1486,8 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
         Целевое покрытие — {plan.assumptions.targetCoverageDays} дн, горизонт прогноза — {plan.assumptions.forecastHorizonDays} дн.
         План построен {new Date(plan.generatedAt).toLocaleString('ru-RU')}.
       </div>
+      </>
+      )}
     </div>
   );
 }
