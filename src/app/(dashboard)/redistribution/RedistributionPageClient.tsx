@@ -97,9 +97,9 @@ type RedistributionExecutionLog = {
 };
 
 function formatDateTimeMsk(value: string | null) {
-  if (!value) return 'вЂ”';
+  if (!value) return '—';
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return 'вЂ”';
+  if (Number.isNaN(parsed.getTime())) return '—';
   return parsed.toLocaleString('ru-RU', {
     day: '2-digit',
     month: '2-digit',
@@ -110,12 +110,12 @@ function formatDateTimeMsk(value: string | null) {
 }
 
 function executionStatusLabel(status: string) {
-  if (status === 'rpa_submitted') return 'РЎРѕР·РґР°РЅРѕ РІ WB';
-  if (status === 'rpa_failed') return 'РќРµ СЃРѕР·РґР°РЅРѕ';
-  if (status === 'rpa_queued') return 'Р’ РѕС‡РµСЂРµРґРё';
-  if (status === 'rpa_running') return 'Р’ СЂР°Р±РѕС‚Рµ';
-  if (status === 'planned') return 'РћР¶РёРґР°РµС‚ СЃР»РѕС‚Р°';
-  if (status === 'rejected') return 'РћС‚РєР»РѕРЅРµРЅРѕ';
+  if (status === 'rpa_submitted') return 'Создано в WB';
+  if (status === 'rpa_failed') return 'Не создано';
+  if (status === 'rpa_queued') return 'В очереди';
+  if (status === 'rpa_running') return 'В работе';
+  if (status === 'planned') return 'Ожидает слота';
+  if (status === 'rejected') return 'Отклонено';
   return status;
 }
 
@@ -127,11 +127,11 @@ function executionStatusClass(status: string) {
 }
 
 function attemptStatusLabel(status: string, submitted: boolean) {
-  if (submitted) return 'Р—Р°СЏРІРєР° СѓС€Р»Р°';
-  if (status === 'available') return 'РЎР»РѕС‚ Р±С‹Р»';
-  if (status === 'limit_exhausted') return 'Р›РёРјРёС‚ РЅРѕР»СЊ';
-  if (status === 'route_unavailable') return 'РњР°СЂС€СЂСѓС‚ РЅРµРґРѕСЃС‚СѓРїРµРЅ';
-  if (status === 'transient_error') return 'РћС€РёР±РєР° WB';
+  if (submitted) return 'Заявка ушла';
+  if (status === 'available') return 'Слот был';
+  if (status === 'limit_exhausted') return 'Лимит ноль';
+  if (status === 'route_unavailable') return 'Маршрут недоступен';
+  if (status === 'transient_error') return 'Ошибка WB';
   return status;
 }
 
@@ -142,15 +142,15 @@ function attemptStatusClass(status: string, submitted: boolean) {
 }
 
 function explainAttemptReason(reason: string | null) {
-  if (!reason) return 'WB РЅРµ РІРµСЂРЅСѓР» РїСЂРёС‡РёРЅСѓ.';
-  if (reason.includes('HTTP 429')) return 'WB РѕРіСЂР°РЅРёС‡РёР» С‡Р°СЃС‚РѕС‚Сѓ Р·Р°РїСЂРѕСЃРѕРІ. РњРѕРЅРёС‚РѕСЂ РїСЂРѕРґРѕР»Р¶РёС‚ РїСЂРѕРІРµСЂСЏС‚СЊ СЃ РїР°СѓР·Р°РјРё.';
-  if (reason === 'src_quota_zero') return 'РќР° РёСЃС…РѕРґСЏС‰РµРј СЃРєР»Р°РґРµ Р·Р°РєРѕРЅС‡РёР»СЃСЏ СЃСѓС‚РѕС‡РЅС‹Р№ Р»РёРјРёС‚ РѕС‚РїСЂР°РІРєРё.';
-  if (reason === 'dst_quota_zero') return 'РќР° СЃРєР»Р°РґРµ РЅР°Р·РЅР°С‡РµРЅРёСЏ Р·Р°РєРѕРЅС‡РёР»СЃСЏ СЃСѓС‚РѕС‡РЅС‹Р№ Р»РёРјРёС‚ РїСЂРёС‘РјР°.';
-  if (reason === 'source_warehouse_not_found') return 'WB РЅРµ РѕС‚РґР°Р» СЌС‚РѕС‚ СЃРєР»Р°Рґ РєР°Рє РґРѕСЃС‚СѓРїРЅС‹Р№ РёСЃС…РѕРґСЏС‰РёР№ РґР»СЏ Р°СЂС‚РёРєСѓР»Р°.';
-  if (reason === 'destination_warehouse_not_found') return 'WB РЅРµ РѕС‚РґР°Р» СЃРєР»Р°Рґ РЅР°Р·РЅР°С‡РµРЅРёСЏ РґР»СЏ Р°СЂС‚РёРєСѓР»Р°.';
-  if (reason === 'size_not_in_source_stock') return 'WB РЅРµ РІРёРґРёС‚ РЅСѓР¶РЅС‹Р№ СЂР°Р·РјРµСЂ РЅР° РёСЃС…РѕРґРЅРѕРј СЃРєР»Р°РґРµ.';
-  if (reason === 'source_stock_zero') return 'WB РІРёРґРёС‚ РЅСѓР»РµРІРѕР№ РѕСЃС‚Р°С‚РѕРє РЅР° РёСЃС…РѕРґРЅРѕРј СЃРєР»Р°РґРµ.';
-  if (reason === 'http_order_submitted') return 'WB РїСЂРёРЅСЏР» Р·Р°СЏРІРєСѓ РЅР° РїРµСЂРµРјРµС‰РµРЅРёРµ.';
+  if (!reason) return 'WB не вернул причину.';
+  if (reason.includes('HTTP 429')) return 'WB ограничил частоту запросов. Монитор продолжит проверять с паузами.';
+  if (reason === 'src_quota_zero') return 'На исходящем складе закончился суточный лимит отправки.';
+  if (reason === 'dst_quota_zero') return 'На складе назначения закончился суточный лимит приёма.';
+  if (reason === 'source_warehouse_not_found') return 'WB не отдал этот склад как доступный исходящий для артикула.';
+  if (reason === 'destination_warehouse_not_found') return 'WB не отдал склад назначения для артикула.';
+  if (reason === 'size_not_in_source_stock') return 'WB не видит нужный размер на исходном складе.';
+  if (reason === 'source_stock_zero') return 'WB видит нулевой остаток на исходном складе.';
+  if (reason === 'http_order_submitted') return 'WB принял заявку на перемещение.';
   return reason;
 }
 
@@ -191,45 +191,45 @@ function HeroTile({
 
 function RobotStatusBlock({ status }: { status: RobotSessionStatus }) {
   let tone: 'ok' | 'warning' | 'critical' = 'critical';
-  let title = 'рџ”ґ Р РѕР±РѕС‚ РЅРµ РЅР°СЃС‚СЂРѕРµРЅ';
+  let title = '🔴 Робот не настроен';
   let body: React.ReactNode = (
     <>
-      РџРµСЂРµР№РґРёС‚Рµ РІ <Link href="/settings" className="font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300">РќР°СЃС‚СЂРѕР№РєРё в†’ WB Р›Рљ</Link> Рё РІРѕР№РґРёС‚Рµ С‡РµСЂРµР· СЂРѕР±РѕС‚Р°.
-      Р‘РµР· СЌС‚РѕРіРѕ В«Р—Р°РІРµСЃС‚Рё РІ WB Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРёВ» РЅРµ СЃСЂР°Р±РѕС‚Р°РµС‚ вЂ” РїСЂРёРґС‘С‚СЃСЏ СЃРєР°С‡РёРІР°С‚СЊ Excel Рё Р·Р°РІРѕРґРёС‚СЊ Р·Р°СЏРІРєРё СЂСѓРєР°РјРё.
+      Перейдите в <Link href="/settings" className="font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300">Настройки → WB ЛК</Link> и войдите через робота.
+      Без этого «Завести в WB автоматически» не сработает — придётся скачивать Excel и заводить заявки руками.
     </>
   );
 
   if (status.hasSession && status.markedActive) {
     if (status.freshness === 'fresh') {
       tone = 'ok';
-      title = 'рџџў Р РѕР±РѕС‚ РіРѕС‚РѕРІ';
-      const ageStr = status.ageDays != null && status.ageDays > 0 ? ` (РѕР±РЅРѕРІР»РµРЅРѕ ${status.ageDays} РґРЅ РЅР°Р·Р°Рґ)` : ' (СЃРІРµР¶Р°СЏ СЃРµСЃСЃРёСЏ)';
-      body = <>Р РѕР±РѕС‚ РјРѕР¶РµС‚ Р·Р°Р№С‚Рё РІ WB Рё РѕС„РѕСЂРјРёС‚СЊ Р·Р°СЏРІРєРё СЃР°Рј.{ageStr}</>;
+      title = '🟢 Робот готов';
+      const ageStr = status.ageDays != null && status.ageDays > 0 ? ` (обновлено ${status.ageDays} дн назад)` : ' (свежая сессия)';
+      body = <>Робот может зайти в WB и оформить заявки сам.{ageStr}</>;
     } else if (status.freshness === 'stale') {
       tone = 'warning';
-      title = 'рџџЎ РЎРµСЃСЃРёСЏ РґР°РІРЅРѕ РЅРµ РѕР±РЅРѕРІР»СЏР»Р°СЃСЊ';
+      title = '🟡 Сессия давно не обновлялась';
       body = (
         <>
-          РЎРµСЃСЃРёСЏ Р¶РёРІС‘С‚ {status.ageDays} РґРЅРµР№ вЂ” РїРѕРєР° СЂР°Р±РѕС‚Р°РµС‚, РЅРѕ СЂРµРєРѕРјРµРЅРґСѓРµРј
-          РїРµСЂРµРІРѕР№С‚Рё РІ <Link href="/settings" className="font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300">РќР°СЃС‚СЂРѕР№РєР°С…</Link>, С‡С‚РѕР±С‹ РєСѓРєРё РЅРµ РёСЃС‚РµРєР»Рё.
+          Сессия живёт {status.ageDays} дней — пока работает, но рекомендуем
+          перевойти в <Link href="/settings" className="font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300">Настройках</Link>, чтобы куки не истекли.
         </>
       );
     } else {
       tone = 'critical';
-      title = 'рџ”ґ РЎРµСЃСЃРёСЏ СѓСЃС‚Р°СЂРµР»Р°';
+      title = '🔴 Сессия устарела';
       body = (
         <>
-          РџСЂРѕС€Р»Рѕ {status.ageDays ?? 'вЂ”'} РґРЅРµР№ вЂ” РЅСѓР¶РЅРѕ Р·Р°Р№С‚Рё Р·Р°РЅРѕРІРѕ РІ <Link href="/settings" className="font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300">РќР°СЃС‚СЂРѕР№РєР°С… в†’ WB Р›Рљ</Link>.
+          Прошло {status.ageDays ?? '—'} дней — нужно зайти заново в <Link href="/settings" className="font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300">Настройках → WB ЛК</Link>.
         </>
       );
     }
   } else if (status.hasSession) {
     tone = 'warning';
-    title = 'рџџЎ РЎРµСЃСЃРёСЏ РµСЃС‚СЊ, РЅРѕ РЅРµ РїРѕРґС‚РІРµСЂР¶РґРµРЅР°';
+    title = '🟡 Сессия есть, но не подтверждена';
     body = (
       <>
-        РџРѕСЃР»РµРґРЅРёР№ РІС…РѕРґ РЅРµ Р±С‹Р» СѓСЃРїРµС€РЅРѕ РїРѕРґС‚РІРµСЂР¶РґС‘РЅ. РџРµСЂРµР№РґРёС‚Рµ РІ <Link href="/settings" className="font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300">РќР°СЃС‚СЂРѕР№РєРё в†’ WB Р›Рљ</Link> Рё РІРѕР№РґРёС‚Рµ СЃРЅРѕРІР°.
-        {status.lastError ? <span className="mt-1 block opacity-70">РћС€РёР±РєР°: {status.lastError.slice(0, 200)}</span> : null}
+        Последний вход не был успешно подтверждён. Перейдите в <Link href="/settings" className="font-medium text-emerald-700 underline-offset-2 hover:underline dark:text-emerald-300">Настройки → WB ЛК</Link> и войдите снова.
+        {status.lastError ? <span className="mt-1 block opacity-70">Ошибка: {status.lastError.slice(0, 200)}</span> : null}
       </>
     );
   }
@@ -281,7 +281,7 @@ type ArticleRecRendered = Omit<ArticleRecGroup, 'legs'> & {
   simulatedKrpPct: number;
 };
 
-/** РћРґРЅР° РєР°СЂС‚РѕС‡РєР°-Р·Р°СЏРІРєР° РЅР° Р°СЂС‚РёРєСѓР»: РІСЃРµ РјР°СЂС€СЂСѓС‚С‹ Рё СЂР°Р·РјРµСЂС‹ РІРЅСѓС‚СЂРё. */
+/** Одна карточка-заявка на артикул: все маршруты и размеры внутри. */
 function ArticleRecommendationCard({ group, rank }: { group: ArticleRecRendered; rank: number }) {
   const localDelta = group.simulatedLocalSharePct - group.currentLocalSharePct;
   const krpDelta = group.currentKrpPct - group.simulatedKrpPct;
@@ -290,21 +290,21 @@ function ArticleRecommendationCard({ group, rank }: { group: ArticleRecRendered;
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="flex items-baseline gap-2">
           <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-bold text-muted-foreground">#{rank}</span>
-          <h3 className="text-base font-semibold text-foreground">{group.vendorCode || `РђСЂС‚РёРєСѓР» ${group.nmId}`}</h3>
-          {group.brand && <span className="text-xs text-muted-foreground">В· {group.brand}</span>}
+          <h3 className="text-base font-semibold text-foreground">{group.vendorCode || `Артикул ${group.nmId}`}</h3>
+          {group.brand && <span className="text-xs text-muted-foreground">· {group.brand}</span>}
           <span className="text-[11px] text-muted-foreground tabular-nums">{group.nmId}</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="rounded-md bg-sky-500/10 px-2 py-0.5 text-xs font-bold text-sky-700 dark:text-sky-300">
-            {group.totalUnits} С€С‚ В· {group.legsList.length}{group.legsList.length === 1 ? ' РјР°СЂС€СЂСѓС‚' : ' РјР°СЂС€СЂ.'}
+            {group.totalUnits} шт · {group.legsList.length}{group.legsList.length === 1 ? ' маршрут' : ' маршр.'}
           </span>
           <span className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-300">
-            {formatCurrency(group.totalSavingsRub, 0)}/РјРµСЃ
+            {formatCurrency(group.totalSavingsRub, 0)}/мес
           </span>
         </div>
       </div>
 
-      {/* РњР°СЂС€СЂСѓС‚С‹ Р°СЂС‚РёРєСѓР»Р°: РєР°Р¶РґС‹Р№ = РѕС‚РєСѓРґР°в†’РєСѓРґР° + СЂР°Р·РјРµСЂС‹ */}
+      {/* Маршруты артикула: каждый = откуда→куда + размеры */}
       <div className="mt-3 flex flex-col gap-2">
         {group.legsList.map((leg, i) => (
           <div key={i} className="rounded-xl border border-border bg-muted/30 p-2.5">
@@ -312,12 +312,12 @@ function ArticleRecommendationCard({ group, rank }: { group: ArticleRecRendered;
               <span className="rounded-md border border-rose-500/30 bg-rose-500/5 px-2 py-0.5 text-[12px] font-medium text-foreground">{leg.fromWarehouse}</span>
               <ArrowRight className="h-4 w-4 text-emerald-500" />
               <span className="rounded-md border border-emerald-500/30 bg-emerald-500/5 px-2 py-0.5 text-[12px] font-medium text-foreground">{leg.toWarehouse}</span>
-              <span className="ml-auto text-[12px] font-bold tabular-nums text-foreground">{leg.totalUnits} С€С‚</span>
+              <span className="ml-auto text-[12px] font-bold tabular-nums text-foreground">{leg.totalUnits} шт</span>
             </div>
             <div className="mt-1.5 flex flex-wrap gap-1">
               {leg.sizes.map((s) => (
                 <span key={s.size} className="inline-flex items-center gap-1 rounded-md bg-card px-1.5 py-0.5 font-mono text-[11px]">
-                  {s.size} <span className="font-bold text-emerald-700 dark:text-emerald-300">Г—{s.units}</span>
+                  {s.size} <span className="font-bold text-emerald-700 dark:text-emerald-300">×{s.units}</span>
                 </span>
               ))}
             </div>
@@ -325,20 +325,20 @@ function ArticleRecommendationCard({ group, rank }: { group: ArticleRecRendered;
         ))}
       </div>
 
-      {/* Р­С„С„РµРєС‚ РїРѕ Р°СЂС‚РёРєСѓР»Сѓ */}
+      {/* Эффект по артикулу */}
       <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg border border-border bg-muted/30 p-2.5 text-xs">
         <div>
-          <div className="text-muted-foreground">Р›РѕРєР°Р»РёР·Р°С†РёСЏ</div>
+          <div className="text-muted-foreground">Локализация</div>
           <div className="font-semibold text-foreground tabular-nums">
-            {formatPercent(group.currentLocalSharePct, 1)} в†’ {formatPercent(group.simulatedLocalSharePct, 1)}
+            {formatPercent(group.currentLocalSharePct, 1)} → {formatPercent(group.simulatedLocalSharePct, 1)}
             {localDelta > 0 && <span className="ml-1 text-emerald-700 dark:text-emerald-400">(+{formatPercent(localDelta, 1)})</span>}
           </div>
         </div>
         <div>
-          <div className="text-muted-foreground">Р”РѕРїР»Р°С‚Р° WB Р·Р° РґР°Р»СЊРЅРѕСЃС‚СЊ</div>
+          <div className="text-muted-foreground">Доплата WB за дальность</div>
           <div className="font-semibold text-foreground tabular-nums">
-            {formatPercent(group.currentKrpPct, 2)} в†’ {formatPercent(group.simulatedKrpPct, 2)}
-            {krpDelta > 0 && <span className="ml-1 text-emerald-700 dark:text-emerald-400">(в€’{formatPercent(krpDelta, 2)})</span>}
+            {formatPercent(group.currentKrpPct, 2)} → {formatPercent(group.simulatedKrpPct, 2)}
+            {krpDelta > 0 && <span className="ml-1 text-emerald-700 dark:text-emerald-400">(−{formatPercent(krpDelta, 2)})</span>}
           </div>
         </div>
       </div>
@@ -346,6 +346,106 @@ function ArticleRecommendationCard({ group, rank }: { group: ArticleRecRendered;
   );
 }
 
+function RecommendationCard({
+  rec,
+  rank,
+}: {
+  rec: RedistributionTransferRecommendation;
+  rank: number;
+}) {
+  const localizationDelta = rec.simulatedLocalSharePct - rec.currentLocalSharePct;
+  const krpDelta = rec.currentKrpPct - rec.simulatedKrpPct;
+  const fromCoverage = rec.fromCoverageDaysBefore;
+  const toCoverage = rec.toCoverageDaysBefore;
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 shadow-sm transition-all hover:border-emerald-500/40 hover:shadow-md">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="flex items-baseline gap-2">
+          <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-bold text-muted-foreground">
+            #{rank}
+          </span>
+          <h3 className="text-base font-semibold text-foreground">
+            {rec.vendorCode || `Артикул ${rec.nmId}`}
+          </h3>
+          {rec.brand && (
+            <span className="text-xs text-muted-foreground">· {rec.brand}</span>
+          )}
+        </div>
+        <div className="rounded-md bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:text-emerald-300">
+          Сэкономит {formatCurrency(rec.estimatedSavingsRub, 0)}/мес
+        </div>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span>Размер: <span className="font-semibold text-foreground">{rec.sizeName}</span></span>
+        <span>·</span>
+        <span>Артикул WB: <span className="tabular-nums">{rec.nmId}</span></span>
+      </div>
+
+      {/* Маршрут */}
+      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto_1fr_auto] md:items-center">
+        <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-2.5">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-400">
+            Откуда
+          </div>
+          <div className="mt-0.5 text-sm font-medium text-foreground">{rec.fromWarehouse}</div>
+          <div className="text-[11px] text-muted-foreground">
+            {rec.fromRegionName}
+            {fromCoverage != null && (
+              <span> · покрытие {formatNumber(fromCoverage, 0)} дн</span>
+            )}
+          </div>
+        </div>
+        <ArrowRight className="hidden h-5 w-5 text-emerald-500 md:block" />
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+            Куда
+          </div>
+          <div className="mt-0.5 text-sm font-medium text-foreground">{rec.toWarehouse}</div>
+          <div className="text-[11px] text-muted-foreground">
+            {rec.toRegionName}
+            {toCoverage != null && (
+              <span> · покрытие {formatNumber(toCoverage, 0)} дн</span>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-center rounded-lg border-2 border-emerald-500 bg-emerald-500/10 px-3 py-2 text-center">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+            Перевезти
+          </div>
+          <div className="text-2xl font-bold tabular-nums text-foreground">{rec.transferUnits}</div>
+          <div className="text-[10px] text-muted-foreground">шт</div>
+        </div>
+      </div>
+
+      {/* Эффект */}
+      <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg border border-border bg-muted/30 p-2.5 text-xs">
+        <div>
+          <div className="text-muted-foreground">Локализация SKU</div>
+          <div className="font-semibold text-foreground tabular-nums">
+            {formatPercent(rec.currentLocalSharePct, 1)} → {formatPercent(rec.simulatedLocalSharePct, 1)}
+            {localizationDelta > 0 && (
+              <span className="ml-1 text-emerald-700 dark:text-emerald-400">
+                (+{formatPercent(localizationDelta, 1)})
+              </span>
+            )}
+          </div>
+        </div>
+        <div>
+          <div className="text-muted-foreground">Доплата WB за дальность</div>
+          <div className="font-semibold text-foreground tabular-nums">
+            {formatPercent(rec.currentKrpPct, 2)} → {formatPercent(rec.simulatedKrpPct, 2)}
+            {krpDelta > 0 && (
+              <span className="ml-1 text-emerald-700 dark:text-emerald-400">
+                (−{formatPercent(krpDelta, 2)})
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function Pagination({
   currentPage,
@@ -356,17 +456,17 @@ function Pagination({
   totalPages: number;
   onChange: (page: number) => void;
 }) {
-  // РЎС‡РёС‚Р°РµРј РєР°РєРёРµ СЃС‚СЂР°РЅРёС†С‹ РїРѕРєР°Р·Р°С‚СЊ РІ РЅР°РІРёРіР°С†РёРё (СЃ РјРЅРѕРіРѕС‚РѕС‡РёСЏРјРё РґР»СЏ РґР»РёРЅРЅС‹С… СЃРїРёСЃРєРѕРІ).
-  const pages: Array<number | 'вЂ¦'> = [];
+  // Считаем какие страницы показать в навигации (с многоточиями для длинных списков).
+  const pages: Array<number | '…'> = [];
   if (totalPages <= 7) {
     for (let i = 1; i <= totalPages; i++) pages.push(i);
   } else {
     pages.push(1);
-    if (currentPage > 3) pages.push('вЂ¦');
+    if (currentPage > 3) pages.push('…');
     const from = Math.max(2, currentPage - 1);
     const to = Math.min(totalPages - 1, currentPage + 1);
     for (let i = from; i <= to; i++) pages.push(i);
-    if (currentPage < totalPages - 2) pages.push('вЂ¦');
+    if (currentPage < totalPages - 2) pages.push('…');
     pages.push(totalPages);
   }
 
@@ -378,12 +478,12 @@ function Pagination({
         disabled={currentPage <= 1}
         className="rounded-md border border-border bg-card px-2 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
       >
-        в†ђ РќР°Р·Р°Рґ
+        ← Назад
       </button>
       {pages.map((p, idx) =>
-        p === 'вЂ¦' ? (
+        p === '…' ? (
           <span key={`dots-${idx}`} className="px-1 text-muted-foreground">
-            вЂ¦
+            …
           </span>
         ) : (
           <button
@@ -406,7 +506,7 @@ function Pagination({
         disabled={currentPage >= totalPages}
         className="rounded-md border border-border bg-card px-2 py-1 font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
       >
-        Р’РїРµСЂС‘Рґ в†’
+        Вперёд →
       </button>
     </div>
   );
@@ -444,21 +544,21 @@ function ExecutionLogBlock({
         <div className="min-w-[280px] flex-1">
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <History className="h-4 w-4 text-emerald-500" />
-            РђРІС‚РѕСЃРѕР·РґР°РЅРёРµ
+            Автосоздание
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <span>РЎРѕР·РґР°РЅРѕ: <b className="text-foreground">{submitted}</b></span>
-            <span>Р’ РѕС‡РµСЂРµРґРё: <b className="text-foreground">{queued}</b></span>
-            <span>Р–РґС‘С‚ СЃР»РѕС‚Р°: <b className="text-foreground">{planned}</b></span>
+            <span>Создано: <b className="text-foreground">{submitted}</b></span>
+            <span>В очереди: <b className="text-foreground">{queued}</b></span>
+            <span>Ждёт слота: <b className="text-foreground">{planned}</b></span>
           </div>
           {lastRun ? (
             <div className="mt-1 truncate text-xs text-muted-foreground">
-              РџРѕСЃР»РµРґРЅСЏСЏ РїСЂРѕРІРµСЂРєР°: {formatDateTimeMsk(lastRun.startedAt)} В· {lastRun.message ?? lastRun.status}
+              Последняя проверка: {formatDateTimeMsk(lastRun.startedAt)} · {lastRun.message ?? lastRun.status}
             </div>
           ) : null}
           {manualSubmitMessage ? (
             <div className="mt-1 truncate text-xs text-muted-foreground">
-              Р СѓС‡РЅРѕР№ Р·Р°РїСѓСЃРє: <span className="font-semibold text-foreground">{manualSubmitMessage}</span>
+              Ручной запуск: <span className="font-semibold text-foreground">{manualSubmitMessage}</span>
             </div>
           ) : null}
         </div>
@@ -470,7 +570,7 @@ function ExecutionLogBlock({
             className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
           >
             {refreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            РћР±РЅРѕРІРёС‚СЊ
+            Обновить
           </button>
           <button
             type="button"
@@ -479,7 +579,7 @@ function ExecutionLogBlock({
             className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {runningSlotMonitor ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-            РЎРѕР·РґР°С‚СЊ РІ WB СЃРµР№С‡Р°СЃ
+            Создать в WB сейчас
           </button>
           <button
             type="button"
@@ -487,7 +587,7 @@ function ExecutionLogBlock({
             className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
           >
             <History className="h-3.5 w-3.5" />
-            {detailsOpen ? 'РЎРєСЂС‹С‚СЊ Р¶СѓСЂРЅР°Р»' : 'Р–СѓСЂРЅР°Р»'}
+            {detailsOpen ? 'Скрыть журнал' : 'Журнал'}
           </button>
         </div>
       </div>
@@ -495,7 +595,7 @@ function ExecutionLogBlock({
       {loading && detailsOpen ? (
         <div className="px-4 py-5 text-sm text-muted-foreground">
           <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-          Р—Р°РіСЂСѓР¶Р°СЋ Р¶СѓСЂРЅР°Р»вЂ¦
+          Загружаю журнал…
         </div>
       ) : null}
 
@@ -509,7 +609,7 @@ function ExecutionLogBlock({
                 activeTab === 'items' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              Р—Р°СЏРІРєРё
+              Заявки
             </button>
             <button
               type="button"
@@ -518,7 +618,7 @@ function ExecutionLogBlock({
                 activeTab === 'attempts' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              РџРѕРїС‹С‚РєРё WB
+              Попытки WB
             </button>
           </div>
 
@@ -531,10 +631,10 @@ function ExecutionLogBlock({
                     className="grid grid-cols-1 gap-1 border-b border-border px-3 py-2 text-xs last:border-b-0 md:grid-cols-[1.2fr_1.4fr_auto]"
                   >
                     <div className="font-semibold text-foreground">
-                      {item.vendorCode || item.nmId} В· {item.sizeName}
+                      {item.vendorCode || item.nmId} · {item.sizeName}
                     </div>
                     <div className="text-muted-foreground">
-                      {item.fromWarehouse} в†’ {item.toWarehouse} В· {item.transferUnits} С€С‚ В· {formatDateTimeMsk(item.executedAt ?? item.updatedAt)}
+                      {item.fromWarehouse} → {item.toWarehouse} · {item.transferUnits} шт · {formatDateTimeMsk(item.executedAt ?? item.updatedAt)}
                     </div>
                     <div className="md:text-right">
                       <span className={`rounded-md border px-2 py-0.5 font-semibold ${executionStatusClass(item.status)}`}>
@@ -546,7 +646,7 @@ function ExecutionLogBlock({
               </div>
             ) : (
               <div className="rounded-lg border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
-                Р—Р°СЏРІРѕРє РІ Р¶СѓСЂРЅР°Р»Рµ РїРѕРєР° РЅРµС‚.
+                Заявок в журнале пока нет.
               </div>
             )
           ) : visibleAttempts.length > 0 ? (
@@ -557,10 +657,10 @@ function ExecutionLogBlock({
                   className="grid grid-cols-1 gap-1 border-b border-border px-3 py-2 text-xs last:border-b-0 md:grid-cols-[1.2fr_1.4fr_auto]"
                 >
                   <div className="font-semibold text-foreground">
-                    {attempt.nmId ?? 'РјР°СЂС€СЂСѓС‚'}{attempt.sizeName ? ` В· ${attempt.sizeName}` : ''}
+                    {attempt.nmId ?? 'маршрут'}{attempt.sizeName ? ` · ${attempt.sizeName}` : ''}
                   </div>
                   <div className="text-muted-foreground">
-                    {attempt.fromWarehouse} в†’ {attempt.toWarehouse} В· src={attempt.srcQuota ?? '-'} В· dst={attempt.dstQuota ?? '-'} В· {formatDateTimeMsk(attempt.observedAt)}
+                    {attempt.fromWarehouse} → {attempt.toWarehouse} · src={attempt.srcQuota ?? '-'} · dst={attempt.dstQuota ?? '-'} · {formatDateTimeMsk(attempt.observedAt)}
                   </div>
                   <div className="md:text-right">
                     <span className={`rounded-md px-2 py-0.5 font-semibold ${attemptStatusClass(attempt.status, attempt.submitted)}`}>
@@ -569,14 +669,14 @@ function ExecutionLogBlock({
                   </div>
                   <div className="text-muted-foreground md:col-span-3">
                     {explainAttemptReason(attempt.reason)}
-                    {attempt.submitted ? ` В· СѓС€Р»Рѕ ${attempt.submittedUnits} С€С‚` : ''}
+                    {attempt.submitted ? ` · ушло ${attempt.submittedUnits} шт` : ''}
                   </div>
                 </div>
               ))}
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
-              Р—Р° РїРѕСЃР»РµРґРЅРёРµ {log?.windowHours ?? 168} С‡ РїРѕРїС‹С‚РѕРє РЅРµ РЅР°Р№РґРµРЅРѕ.
+              За последние {log?.windowHours ?? 168} ч попыток не найдено.
             </div>
           )}
         </div>
@@ -602,7 +702,7 @@ type ManualRequestFormState = {
 const emptyManualRequestForm: ManualRequestFormState = {
   nmId: '',
   vendorCode: '',
-  sizeName: 'Р‘РµР· СЂР°Р·РјРµСЂР°',
+  sizeName: 'Без размера',
   transferUnits: '',
   fromWarehouse: '',
   toWarehouse: '',
@@ -611,9 +711,9 @@ const emptyManualRequestForm: ManualRequestFormState = {
 function normalizeWarehouseOptionName(value: string) {
   return value
     .toLowerCase()
-    .replace(/[В«В»"']/g, '')
+    .replace(/[«»"']/g, '')
     .replace(/\bwb\b/g, '')
-    .replace(/[^a-zР°-СЏС‘0-9]+/gi, ' ')
+    .replace(/[^a-zа-яё0-9]+/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -670,14 +770,14 @@ function ManualRequestBlock({
       });
       const data = await res.json().catch(() => null) as { message?: string; error?: string } | null;
       if (!res.ok) {
-        setError(data?.error ?? `РќРµ СѓРґР°Р»РѕСЃСЊ РґРѕР±Р°РІРёС‚СЊ Р·Р°СЏРІРєСѓ: HTTP ${res.status}`);
+        setError(data?.error ?? `Не удалось добавить заявку: HTTP ${res.status}`);
         return;
       }
-      setMessage(data?.message ?? 'Р СѓС‡РЅР°СЏ Р·Р°СЏРІРєР° РґРѕР±Р°РІР»РµРЅР° РІ РѕС‡РµСЂРµРґСЊ.');
+      setMessage(data?.message ?? 'Ручная заявка добавлена в очередь.');
       setForm(emptyManualRequestForm);
       await onCreated(submitNow);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'РќРµ СѓРґР°Р»РѕСЃСЊ РґРѕР±Р°РІРёС‚СЊ Р·Р°СЏРІРєСѓ.');
+      setError(err instanceof Error ? err.message : 'Не удалось добавить заявку.');
     } finally {
       setCreatingMode(null);
     }
@@ -689,10 +789,10 @@ function ManualRequestBlock({
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <Plus className="h-4 w-4 text-emerald-500" />
-            Р СѓС‡РЅР°СЏ Р·Р°СЏРІРєР°
+            Ручная заявка
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            Р”РѕР±Р°РІРёС‚СЊ РїРµСЂРµРјРµС‰РµРЅРёРµ РІ РѕС‡РµСЂРµРґСЊ Р±РµР· СЂРµРєРѕРјРµРЅРґР°С†РёРё Р°Р»РіРѕСЂРёС‚РјР°.
+            Добавить перемещение в очередь без рекомендации алгоритма.
           </div>
         </div>
         <button
@@ -701,7 +801,7 @@ function ManualRequestBlock({
           className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted"
         >
           {open ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-          {open ? 'РЎРєСЂС‹С‚СЊ' : 'Р”РѕР±Р°РІРёС‚СЊ'}
+          {open ? 'Скрыть' : 'Добавить'}
         </button>
       </div>
 
@@ -714,7 +814,7 @@ function ManualRequestBlock({
           </datalist>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-6">
             <label className="md:col-span-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">РђСЂС‚РёРєСѓР» WB</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Артикул WB</span>
               <input
                 value={form.nmId}
                 onChange={(event) => updateField('nmId', event.target.value)}
@@ -724,16 +824,16 @@ function ManualRequestBlock({
               />
             </label>
             <label className="md:col-span-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Р Р°Р·РјРµСЂ</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Размер</span>
               <input
                 value={form.sizeName}
                 onChange={(event) => updateField('sizeName', event.target.value)}
                 className="mt-1 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-emerald-500"
-                placeholder="Р‘РµР· СЂР°Р·РјРµСЂР°"
+                placeholder="Без размера"
               />
             </label>
             <label className="md:col-span-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">РЁС‚СѓРє</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Штук</span>
               <input
                 value={form.transferUnits}
                 onChange={(event) => updateField('transferUnits', event.target.value)}
@@ -743,32 +843,32 @@ function ManualRequestBlock({
               />
             </label>
             <label className="md:col-span-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">РќР°Р·РІР°РЅРёРµ</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Название</span>
               <input
                 value={form.vendorCode}
                 onChange={(event) => updateField('vendorCode', event.target.value)}
                 className="mt-1 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-emerald-500"
-                placeholder="РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ"
+                placeholder="необязательно"
               />
             </label>
             <label className="md:col-span-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">РћС‚РєСѓРґР°</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Откуда</span>
               <input
                 value={form.fromWarehouse}
                 onChange={(event) => updateField('fromWarehouse', event.target.value)}
                 list={datalistId}
                 className="mt-1 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-emerald-500"
-                placeholder="РўСѓР»Р°"
+                placeholder="Тула"
               />
             </label>
             <label className="md:col-span-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">РљСѓРґР°</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Куда</span>
               <input
                 value={form.toWarehouse}
                 onChange={(event) => updateField('toWarehouse', event.target.value)}
                 list={datalistId}
                 className="mt-1 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-emerald-500"
-                placeholder="РЎР°СЂР°РїСѓР» WB"
+                placeholder="Сарапул WB"
               />
             </label>
           </div>
@@ -786,7 +886,7 @@ function ManualRequestBlock({
                 className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {creatingMode === 'queue' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                Р”РѕР±Р°РІРёС‚СЊ РІ РѕС‡РµСЂРµРґСЊ
+                Добавить в очередь
               </button>
               <button
                 type="button"
@@ -795,7 +895,7 @@ function ManualRequestBlock({
                 className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {creatingMode === 'submit' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                Р”РѕР±Р°РІРёС‚СЊ Рё СЃРѕР·РґР°С‚СЊ РІ WB
+                Добавить и создать в WB
               </button>
             </div>
           </div>
@@ -819,17 +919,17 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
         `/api/views/redistribution?from=${fromParam}&to=${toParam}`,
         { cache: 'no-store' },
       );
-      if (!res.ok) throw new Error('РќРµ СѓРґР°Р»РѕСЃСЊ СЂР°СЃСЃС‡РёС‚Р°С‚СЊ РїР»Р°РЅ РїРµСЂРµСЂР°СЃРїСЂРµРґРµР»РµРЅРёСЏ');
+      if (!res.ok) throw new Error('Не удалось рассчитать план перераспределения');
       return res.json();
     },
     enabled: Boolean(tenantId),
     staleTime: 60_000,
   });
 
-  // РџР°СЂР°Р»Р»РµР»СЊРЅС‹Р№ Р·Р°РїСЂРѕСЃ РЅР° В«РЅР°СЃС‚РѕСЏС‰РµРµВ» Р·РЅР°С‡РµРЅРёРµ Р»РѕРєР°Р»РёР·Р°С†РёРё РёР· funnel_stats.
-  // redistribution.ts СЃС‡РёС‚Р°РµС‚ Р»РѕРєР°Р»РёР·Р°С†РёСЋ РїРѕ stock_sizes-РјР°С‚СЂРёС†Рµ (РїСЂРѕРіРЅРѕР·РЅСѓСЋ),
-  // С‡С‚Рѕ СЂР°СЃС…РѕРґРёС‚СЃСЏ СЃ WB-РєР°Р±РёРЅРµС‚РѕРј РЅР° ~6-7 Рї.Рї. Р§С‚РѕР±С‹ KPI СЃРѕРІРїР°РґР°Р»Рѕ СЃ С‚РµРј С‡С‚Рѕ
-  // РІРёРґРёС‚ РїСЂРѕРґР°РІРµС† Сѓ WB, Р±РµСЂС‘Рј С‚Рѕ Р¶Рµ Р·РЅР°С‡РµРЅРёРµ С‡С‚Рѕ Рё /stocks-v2/localization.
+  // Параллельный запрос на «настоящее» значение локализации из funnel_stats.
+  // redistribution.ts считает локализацию по stock_sizes-матрице (прогнозную),
+  // что расходится с WB-кабинетом на ~6-7 п.п. Чтобы KPI совпадало с тем что
+  // видит продавец у WB, берём то же значение что и /stocks-v2/localization.
   const stocksLocQuery = useQuery<{ kpi: { avgLocalizationPercent: number | null } } | null, Error>({
     queryKey: ['redistribution-real-localization', tenantId],
     queryFn: async () => {
@@ -858,7 +958,7 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
       const res = await fetch('/api/views/redistribution/execution-log', {
         cache: 'no-store',
       });
-      if (!res.ok) throw new Error('РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р¶СѓСЂРЅР°Р» РїРµСЂРµСЂР°СЃРїСЂРµРґРµР»РµРЅРёСЏ');
+      if (!res.ok) throw new Error('Не удалось загрузить журнал перераспределения');
       return res.json();
     },
     enabled: Boolean(tenantId),
@@ -870,7 +970,7 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
   const [currentPage, setCurrentPage] = useState(1);
   const [runningSlotMonitor, setRunningSlotMonitor] = useState(false);
   const [manualSubmitMessage, setManualSubmitMessage] = useState<string | null>(null);
-  // Р“РѕСЂРёР·РѕРЅС‚ WB-РїРµСЂРµСЃС‡С‘С‚Р° РёРЅРґРµРєСЃР° (СЃРєРѕР»СЊР·СЏС‰РµРµ РѕРєРЅРѕ 13 РЅРµРґРµР»СЊ).
+  // Горизонт WB-пересчёта индекса (скользящее окно 13 недель).
   const [horizonWeeks, setHorizonWeeks] = useState<1 | 13>(13);
 
   const sortedRecommendations = useMemo(() => {
@@ -878,9 +978,9 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
     return [...recs].sort((a, b) => b.priorityScore - a.priorityScore);
   }, [planQuery.data]);
 
-  // Р“СЂСѓРїРїРёСЂРѕРІРєР°: РѕРґРЅР° РєР°СЂС‚РѕС‡РєР°-Р·Р°СЏРІРєР° РЅР° Р°СЂС‚РёРєСѓР», РІРЅСѓС‚СЂРё вЂ” РјР°СЂС€СЂСѓС‚С‹
-  // (РѕС‚РєСѓРґР°в†’РєСѓРґР°), Р° РІ РєР°Р¶РґРѕРј РјР°СЂС€СЂСѓС‚Рµ СЃРїРёСЃРѕРє СЂР°Р·РјРµСЂРѕРІ. РўР°Рє 519-10 РЅРµ
-  // СЂР°СЃРїР°РґР°РµС‚СЃСЏ РЅР° 5 СЃС‚СЂРѕРє РїРѕ СЂР°Р·РјРµСЂР°Рј, Р° СЃРѕР±РёСЂР°РµС‚СЃСЏ РІ РѕРґРЅСѓ Р·Р°СЏРІРєСѓ.
+  // Группировка: одна карточка-заявка на артикул, внутри — маршруты
+  // (откуда→куда), а в каждом маршруте список размеров. Так 519-10 не
+  // распадается на 5 строк по размерам, а собирается в одну заявку.
   const groupedByArticle = useMemo(() => {
     const byNm = new Map<number, ArticleRecGroup>();
     for (const rec of sortedRecommendations) {
@@ -901,7 +1001,7 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
         };
         byNm.set(rec.nmId, g);
       }
-      const routeKey = `${rec.fromWarehouse} в†’ ${rec.toWarehouse}`;
+      const routeKey = `${rec.fromWarehouse} → ${rec.toWarehouse}`;
       let leg = g.legs.get(routeKey);
       if (!leg) {
         leg = {
@@ -971,7 +1071,7 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
     return Array.from(options.values()).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   }, [executionLogQuery.data, sortedRecommendations]);
 
-  // РџР°РіРёРЅР°С†РёСЏ РїРѕ РђР РўРРљРЈР›РђРњ (СЃРіСЂСѓРїРїРёСЂРѕРІР°РЅРЅС‹Рј Р·Р°СЏРІРєР°Рј), РЅРµ РїРѕ СЃС‚СЂРѕРєР°Рј СЂР°Р·РјРµСЂРѕРІ.
+  // Пагинация по АРТИКУЛАМ (сгруппированным заявкам), не по строкам размеров.
   const totalPages = Math.max(1, Math.ceil(groupedByArticle.length / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
   const pageStart = (safePage - 1) * PAGE_SIZE;
@@ -983,7 +1083,7 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
       <div className="flex h-[55vh] flex-col items-center justify-center gap-4 text-emerald-600">
         <Loader2 className="h-10 w-10 animate-spin" />
         <p className="animate-pulse font-medium text-muted-foreground">
-          РЎС‡РёС‚Р°РµРј С‡С‚Рѕ РєСѓРґР° РІРµР·С‚РёвЂ¦
+          Считаем что куда везти…
         </p>
       </div>
     );
@@ -993,9 +1093,9 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
       <OperatorState
         icon={AlertCircle}
         tone="danger"
-        title="РќРµ СѓРґР°Р»РѕСЃСЊ СЂР°СЃСЃС‡РёС‚Р°С‚СЊ РїР»Р°РЅ"
+        title="Не удалось рассчитать план"
         description={planQuery.error.message}
-        actionLabel="РџРѕРІС‚РѕСЂРёС‚СЊ"
+        actionLabel="Повторить"
         action={() => planQuery.refetch()}
       />
     );
@@ -1005,8 +1105,8 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
       <OperatorState
         icon={MapPin}
         tone="default"
-        title="РќРµС‚ РґР°РЅРЅС‹С…"
-        description="РџРѕСЃР»Рµ РїРµСЂРІРѕР№ СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёРё СЃ WB Р·РґРµСЃСЊ РїРѕСЏРІРёС‚СЃСЏ РїР»Р°РЅ РїРµСЂРµРјРµС‰РµРЅРёР№."
+        title="Нет данных"
+        description="После первой синхронизации с WB здесь появится план перемещений."
       />
     );
   }
@@ -1014,8 +1114,8 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
   const plan = planQuery.data;
   const summary = plan.summary;
 
-  // Р›РѕРєР°Р»РёР·Р°С†РёСЏ РёР· funnel_stats (РєР°Рє WB РєР°Р±РёРЅРµС‚ РїРѕРєР°Р·С‹РІР°РµС‚) вЂ” РїСЂРёРѕСЂРёС‚РµС‚.
-  // Р”РµР»СЊС‚Сѓ СЃРёРјСѓР»СЏС†РёРё РёР· redistribution РїСЂРёРјРµРЅСЏРµРј Рє РЅРµР№.
+  // Локализация из funnel_stats (как WB кабинет показывает) — приоритет.
+  // Дельту симуляции из redistribution применяем к ней.
   const realCurrentLocal = stocksLocQuery.data?.kpi?.avgLocalizationPercent ?? null;
   const simulationDelta = summary.simulatedLocalSharePct - summary.currentLocalSharePct;
   const displayCurrentLocal = realCurrentLocal != null ? realCurrentLocal : summary.currentLocalSharePct;
@@ -1024,16 +1124,16 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
     : summary.simulatedLocalSharePct;
   const localDelta = displaySimulatedLocal - displayCurrentLocal;
 
-  // Р РµР°Р»СЊРЅР°СЏ РґРѕРїР»Р°С‚Р° WB РїРѕ РѕС„РёС†РёР°Р»СЊРЅРѕР№ СЃРµС‚РєРµ РљР Рџ.
-  // РџСЂРё Р»РѕРєР°Р»РёР·Р°С†РёРё в‰Ґ60% в†’ 0%. РЎРёРјСѓР»СЏС†РёСЏ redistribution.summary РґР°С‘С‚ В«РїСЂРѕРіРЅРѕР·РЅС‹Р№В»
-  // РљР Рџ РЅР° РѕСЃРЅРѕРІРµ stock_sizes; РµСЃР»Рё СЂРµР°Р»СЊРЅР°СЏ Р»РѕРєР°Р»РёР·Р°С†РёСЏ СѓР¶Рµ в‰Ґ60%, СЌРєРѕРЅРѕРјРёС‚СЊ
-  // РЅРµС‡РµРіРѕ, РєР°РєРёРµ Р±С‹ С†РёС„СЂС‹ redistribution РЅРµ РЅР°СЂРёСЃРѕРІР°Р».
+  // Реальная доплата WB по официальной сетке КРП.
+  // При локализации ≥60% → 0%. Симуляция redistribution.summary даёт «прогнозный»
+  // КРП на основе stock_sizes; если реальная локализация уже ≥60%, экономить
+  // нечего, какие бы цифры redistribution не нарисовал.
   const realCurrentKrp = realCurrentLocal != null ? resolveIrpFromLocalization(realCurrentLocal) : summary.currentKrpPct;
   const realSimulatedKrp = resolveIrpFromLocalization(displaySimulatedLocal);
   const krpDelta = Math.max(0, realCurrentKrp - realSimulatedKrp);
-  // Р•СЃР»Рё СЂРµР°Р»СЊРЅР°СЏ РґРѕРїР»Р°С‚Р° СѓР¶Рµ 0 вЂ” СЌРєРѕРЅРѕРјРёРё РЅРµС‚, РєР°РєРёРµ Р±С‹ С†РёС„СЂС‹ redistribution
-  // РЅРµ РІС‹РґР°Р» (РѕРЅ СЃС‡РёС‚Р°РµС‚ РїРѕ РґСЂСѓРіРѕР№ РјРµС‚РѕРґРёРєРµ, РїРѕСЌС‚РѕРјСѓ РјРѕР¶РµС‚ СЂРёСЃРѕРІР°С‚СЊ В«-1.35%В»
-  // С‚Р°Рј РіРґРµ РµС‘ РЅР° СЃР°РјРѕРј РґРµР»Рµ РЅРµС‚).
+  // Если реальная доплата уже 0 — экономии нет, какие бы цифры redistribution
+  // не выдал (он считает по другой методике, поэтому может рисовать «-1.35%»
+  // там где её на самом деле нет).
   const displaySavingsRub = realCurrentKrp === 0 ? 0 : summary.estimatedSavingsRub;
   const noSavingsBecauseAlreadyAtTarget = realCurrentLocal != null && realCurrentKrp === 0;
 
@@ -1067,20 +1167,20 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
         error?: string;
       } | null;
       if (!res.ok) {
-        setManualSubmitMessage(payload?.error ?? `РћС€РёР±РєР° Р·Р°РїСѓСЃРєР°: HTTP ${res.status}`);
+        setManualSubmitMessage(payload?.error ?? `Ошибка запуска: HTTP ${res.status}`);
         return;
       }
       const result = payload?.monitorResult;
       const details = result
-        ? `${result.message ?? 'Р·Р°РїСѓСЃРє РІС‹РїРѕР»РЅРµРЅ'} В· РїСЂРѕРІРµСЂРµРЅРѕ ${result.probedItems ?? 0} В· СЃР»РѕС‚РѕРІ ${result.openedSlots ?? 0}`
-        : 'Р·Р°РїСѓСЃРє РІС‹РїРѕР»РЅРµРЅ';
+        ? `${result.message ?? 'запуск выполнен'} · проверено ${result.probedItems ?? 0} · слотов ${result.openedSlots ?? 0}`
+        : 'запуск выполнен';
       setManualSubmitMessage(details);
       await Promise.all([
         executionLogQuery.refetch(),
         planQuery.refetch(),
       ]);
     } catch (err) {
-      setManualSubmitMessage(err instanceof Error ? err.message : 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РїСѓСЃС‚РёС‚СЊ Р°РІС‚РѕСЃРѕР·РґР°РЅРёРµ.');
+      setManualSubmitMessage(err instanceof Error ? err.message : 'Не удалось запустить автосоздание.');
     } finally {
       setRunningSlotMonitor(false);
     }
@@ -1103,7 +1203,7 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
             href="/stocks-v2"
             className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
-            <ArrowLeft className="h-3.5 w-3.5" /> Р”Р°С€Р±РѕСЂРґ
+            <ArrowLeft className="h-3.5 w-3.5" /> Дашборд
           </Link>
         </div>
         <button
@@ -1113,7 +1213,7 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
           className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Download className="h-4 w-4" />
-          {exporting ? 'Р“РѕС‚РѕРІР»СЋвЂ¦' : 'РЎРєР°С‡Р°С‚СЊ Excel'}
+          {exporting ? 'Готовлю…' : 'Скачать Excel'}
         </button>
       </div>
 
@@ -1122,52 +1222,52 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
         <HeroTile
           icon={TrendingUp}
           iconClass={noSavingsBecauseAlreadyAtTarget ? 'text-emerald-500' : displaySavingsRub > 0 ? 'text-emerald-500' : 'text-muted-foreground'}
-          label="РЎСЌРєРѕРЅРѕРјРёС‚Рµ Р·Р° РјРµСЃСЏС†"
+          label="Сэкономите за месяц"
           primary={
             noSavingsBecauseAlreadyAtTarget
-              ? '0 в‚Ѕ'
+              ? '0 ₽'
               : formatCurrency(displaySavingsRub, 0)
           }
           secondary={
             noSavingsBecauseAlreadyAtTarget
-              ? `WB СѓР¶Рµ РЅРµ Р±РµСЂС‘С‚ РґРѕРїР»Р°С‚Сѓ (Р»РѕРєР°Р»РёР·Р°С†РёСЏ в‰Ґ 60%) вЂ” СЌРєРѕРЅРѕРјРёС‚СЊ РЅРµС‡РµРіРѕ`
-              : `РЅР° РґРѕРїР»Р°С‚Рµ WB Р·Р° РґР°Р»СЊРЅРѕСЃС‚СЊ (РєРѕРјРёСЃСЃРёСЏ 0.5% СѓР¶Рµ СѓС‡С‚РµРЅР°)`
+              ? `WB уже не берёт доплату (локализация ≥ 60%) — экономить нечего`
+              : `на доплате WB за дальность (комиссия 0.5% уже учтена)`
           }
           tone={noSavingsBecauseAlreadyAtTarget ? 'ok' : displaySavingsRub > 0 ? 'ok' : 'default'}
         />
         <HeroTile
           icon={Package}
           iconClass="text-sky-500"
-          label="РџРµСЂРµРјРµС‰РµРЅРёР№"
-          primary={`${formatNumber(summary.transferUnits, 0)} С€С‚`}
-          secondary={`РїРѕ ${summary.skuCount} С‚РѕРІР°СЂР°Рј В· ${summary.recommendationCount} РјР°СЂС€СЂСѓС‚РѕРІ`}
+          label="Перемещений"
+          primary={`${formatNumber(summary.transferUnits, 0)} шт`}
+          secondary={`по ${summary.skuCount} товарам · ${summary.recommendationCount} маршрутов`}
         />
         <HeroTile
           icon={MapPin}
           iconClass={realCurrentKrp === 0 ? 'text-emerald-500' : 'text-amber-500'}
-          label="Р›РѕРєР°Р»РёР·Р°С†РёСЏ"
-          primary={`${formatPercent(displayCurrentLocal, 1)} в†’ ${formatPercent(displaySimulatedLocal, 1)}`}
+          label="Локализация"
+          primary={`${formatPercent(displayCurrentLocal, 1)} → ${formatPercent(displaySimulatedLocal, 1)}`}
           secondary={
             realCurrentLocal == null
-              ? 'РґР°РЅРЅС‹С… РѕС‚ WB РїРѕРєР° РЅРµС‚'
+              ? 'данных от WB пока нет'
               : realCurrentKrp === 0
-                ? `WB РЅРµ Р±РµСЂС‘С‚ РґРѕРїР»Р°С‚Сѓ В· СѓР¶Рµ РЅР° С†РµР»Рё в‰Ґ 60%`
+                ? `WB не берёт доплату · уже на цели ≥ 60%`
                 : localDelta > 0
-                  ? `+${formatPercent(localDelta, 1)} В· РґРѕРїР»Р°С‚Р° WB СѓРїР°РґС‘С‚ РЅР° ${formatPercent(krpDelta, 2)}`
-                  : 'Р±РµР· Р·РЅР°С‡РёРјС‹С… РїРµСЂРµРјРµС‰РµРЅРёР№'
+                  ? `+${formatPercent(localDelta, 1)} · доплата WB упадёт на ${formatPercent(krpDelta, 2)}`
+                  : 'без значимых перемещений'
           }
           tone={realCurrentKrp === 0 ? 'ok' : localDelta > 0 ? 'ok' : 'default'}
         />
       </div>
 
-      {/* РР› / РР Рџ РёРЅРґРµРєСЃС‹ + СЃРїР»РёС‚ СЌРєРѕРЅРѕРјРёРё + РіРѕСЂРёР·РѕРЅС‚ WB-РїРµСЂРµСЃС‡С‘С‚Р° */}
+      {/* ИЛ / ИРП индексы + сплит экономии + горизонт WB-пересчёта */}
       {displaySavingsRub > 0 ? (
         <div className="rounded-2xl border border-border bg-card px-5 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              РРЅРґРµРєСЃС‹ WB Рё СЌС„С„РµРєС‚ РїРµСЂРµРІРѕР·РєРё
+              Индексы WB и эффект перевозки
             </div>
-            {/* Р“РѕСЂРёР·РѕРЅС‚: WB РїРµСЂРµСЃС‡РёС‚С‹РІР°РµС‚ РР› РЅР° СЃРєРѕР»СЊР·СЏС‰РµРј РѕРєРЅРµ 13 РЅРµРґРµР»СЊ */}
+            {/* Горизонт: WB пересчитывает ИЛ на скользящем окне 13 недель */}
             <div className="inline-flex rounded-full border border-border bg-subtle p-0.5 text-[11px] font-bold">
               {([1, 13] as const).map((w) => (
                 <button
@@ -1176,14 +1276,14 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
                   onClick={() => setHorizonWeeks(w)}
                   className={`rounded-full px-2.5 py-1 transition-colors ${horizonWeeks === w ? 'bg-foreground text-card' : 'text-muted-foreground hover:text-foreground'}`}
                 >
-                  С‡РµСЂРµР· {w} РЅРµРґ
+                  через {w} нед
                 </button>
               ))}
             </div>
           </div>
 
           {(() => {
-            const w = horizonWeeks / 13; // РґРѕР»СЏ СЂРµР°Р»РёР·Р°С†РёРё СѓР»СѓС‡С€РµРЅРёСЏ
+            const w = horizonWeeks / 13; // доля реализации улучшения
             const blendedLocal = displayCurrentLocal + localDelta * w;
             const ilNow = resolveKtrFromLocalization(displayCurrentLocal);
             const ilFuture = resolveKtrFromLocalization(blendedLocal);
@@ -1194,33 +1294,33 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
             return (
               <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
                 <div className="rounded-xl border border-border bg-subtle/40 px-3 py-2">
-                  <div className="text-[10px] uppercase text-muted-foreground">РР› (Р»РѕРіРёСЃС‚РёРєР°)</div>
+                  <div className="text-[10px] uppercase text-muted-foreground">ИЛ (логистика)</div>
                   <div className="mt-0.5 font-mono text-[15px] font-bold text-foreground">
-                    {ilNow.toFixed(2)} <span className="text-emerald-600">в†’ {ilFuture.toFixed(2)}</span>
+                    {ilNow.toFixed(2)} <span className="text-emerald-600">→ {ilFuture.toFixed(2)}</span>
                   </div>
-                  <div className="text-[10px] text-muted-foreground">РјРЅРѕР¶РёС‚РµР»СЊ С‚Р°СЂРёС„Р°, РЅРёР¶Рµ вЂ” Р»СѓС‡С€Рµ</div>
+                  <div className="text-[10px] text-muted-foreground">множитель тарифа, ниже — лучше</div>
                 </div>
                 <div className="rounded-xl border border-border bg-subtle/40 px-3 py-2">
-                  <div className="text-[10px] uppercase text-muted-foreground">РР Рџ (РєРѕРјРёСЃСЃРёСЏ)</div>
+                  <div className="text-[10px] uppercase text-muted-foreground">ИРП (комиссия)</div>
                   <div className="mt-0.5 font-mono text-[15px] font-bold text-foreground">
-                    {realCurrentKrp.toFixed(2)}% <span className="text-emerald-600">в†’ {krpFuture.toFixed(2)}%</span>
+                    {realCurrentKrp.toFixed(2)}% <span className="text-emerald-600">→ {krpFuture.toFixed(2)}%</span>
                   </div>
-                  <div className="text-[10px] text-muted-foreground">РґРѕРїР»Р°С‚Р° Р·Р° РґР°Р»СЊРЅРѕСЃС‚СЊ</div>
+                  <div className="text-[10px] text-muted-foreground">доплата за дальность</div>
                 </div>
                 <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
-                  <div className="text-[10px] uppercase text-muted-foreground">Р­РєРѕРЅРѕРјРёСЏ Р»РѕРіРёСЃС‚РёРєР°</div>
+                  <div className="text-[10px] uppercase text-muted-foreground">Экономия логистика</div>
                   <div className="mt-0.5 font-mono text-[15px] font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(ktrPart, 0)}</div>
-                  <div className="text-[10px] text-muted-foreground">РљРўР  вЂ” С‚Р°СЂРёС„ РґРѕСЃС‚Р°РІРєРё</div>
+                  <div className="text-[10px] text-muted-foreground">КТР — тариф доставки</div>
                 </div>
                 <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
-                  <div className="text-[10px] uppercase text-muted-foreground">Р­РєРѕРЅРѕРјРёСЏ РєРѕРјРёСЃСЃРёСЏ</div>
+                  <div className="text-[10px] uppercase text-muted-foreground">Экономия комиссия</div>
                   <div className="mt-0.5 font-mono text-[15px] font-bold text-emerald-700 dark:text-emerald-300">{formatCurrency(krpPart, 0)}</div>
-                  <div className="text-[10px] text-muted-foreground">РљР Рџ вЂ” РґРѕРїР»Р°С‚Р° %</div>
+                  <div className="text-[10px] text-muted-foreground">КРП — доплата %</div>
                 </div>
                 <div className="col-span-2 text-[11px] text-muted-foreground md:col-span-4">
-                  WB РїРµСЂРµСЃС‡РёС‚С‹РІР°РµС‚ РёРЅРґРµРєСЃ Р»РѕРєР°Р»РёР·Р°С†РёРё РЅР° СЃРєРѕР»СЊР·СЏС‰РµРј РѕРєРЅРµ 13 РЅРµРґРµР»СЊ. {horizonWeeks === 13
-                    ? 'Р§РµСЂРµР· 13 РЅРµРґРµР»СЊ СЌС„С„РµРєС‚ РїРµСЂРµРІРѕР·РєРё СЂРµР°Р»РёР·СѓРµС‚СЃСЏ РїРѕР»РЅРѕСЃС‚СЊСЋ.'
-                    : `Р§РµСЂРµР· ${horizonWeeks} РЅРµРґ СЂРµР°Р»РёР·СѓРµС‚СЃСЏ ~${Math.round(w * 100)}% СЌС„С„РµРєС‚Р° вЂ” РёС‚РѕРіРѕ ${formatCurrency(savingsAtHorizon, 0)}.`}
+                  WB пересчитывает индекс локализации на скользящем окне 13 недель. {horizonWeeks === 13
+                    ? 'Через 13 недель эффект перевозки реализуется полностью.'
+                    : `Через ${horizonWeeks} нед реализуется ~${Math.round(w * 100)}% эффекта — итого ${formatCurrency(savingsAtHorizon, 0)}.`}
                 </div>
               </div>
             );
@@ -1228,22 +1328,22 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
         </div>
       ) : null}
 
-      {/* Р•СЃР»Рё СЂРµР°Р»СЊРЅР°СЏ РґРѕРїР»Р°С‚Р° СѓР¶Рµ 0% вЂ” Р·Р°РјРµС‚РЅС‹Р№ Р±Р»РѕРє В«РІСЃС‘ С…РѕСЂРѕС€РѕВ» */}
+      {/* Если реальная доплата уже 0% — заметный блок «всё хорошо» */}
       {noSavingsBecauseAlreadyAtTarget && (
         <div className="rounded-2xl border-2 border-emerald-500/40 bg-emerald-500/5 px-5 py-4">
           <div className="flex items-start gap-3">
             <CheckCircle2 className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-500" />
             <div className="text-sm">
               <div className="font-semibold text-foreground">
-                РџСЂСЏРјРѕ СЃРµР№С‡Р°СЃ РїРµСЂРµРјРµС‰Р°С‚СЊ РЅРёС‡РµРіРѕ РЅРµ РЅСѓР¶РЅРѕ
+                Прямо сейчас перемещать ничего не нужно
               </div>
               <div className="mt-1 text-muted-foreground">
-                Р’Р°С€Р° Р»РѕРєР°Р»РёР·Р°С†РёСЏ {formatPercent(displayCurrentLocal, 1)} вЂ”
-                СЌС‚Рѕ СѓР¶Рµ Р±РѕР»СЊС€Рµ {formatPercent(60, 0)}, РїРѕСЌС‚РѕРјСѓ WB РЅРµ Р±РµСЂС‘С‚
-                РґРѕРїР»Р°С‚Сѓ Р·Р° РґР°Р»СЊРЅРѕСЃС‚СЊ. РџРµСЂРµРјРµС‰РµРЅРёСЏ РЅРёР¶Рµ вЂ” РЅР° СЃР»СѓС‡Р°Р№ РµСЃР»Рё
-                Р»РѕРєР°Р»РёР·Р°С†РёСЏ СѓРїР°РґС‘С‚ (РЅР°РїСЂРёРјРµСЂ, РїСЂРё СЂРѕСЃС‚Рµ РїСЂРѕРґР°Р¶ РІ РґР°Р»СЊРЅРёС…
-                СЂРµРіРёРѕРЅР°С…) РёР»Рё РµСЃР»Рё РІС‹ С…РѕС‚РёС‚Рµ РµС‰С‘ РїСЂРёР±Р°РІРёС‚СЊ Р·Р°РїР°СЃ РїСЂРѕС‡РЅРѕСЃС‚Рё.
-                Р’ РґРµРЅСЊРіР°С… РїСЂСЏРјРѕ СЃРµР№С‡Р°СЃ РѕРЅРё РЅРµ СЃСЌРєРѕРЅРѕРјСЏС‚.
+                Ваша локализация {formatPercent(displayCurrentLocal, 1)} —
+                это уже больше {formatPercent(60, 0)}, поэтому WB не берёт
+                доплату за дальность. Перемещения ниже — на случай если
+                локализация упадёт (например, при росте продаж в дальних
+                регионах) или если вы хотите ещё прибавить запас прочности.
+                В деньгах прямо сейчас они не сэкономят.
               </div>
             </div>
           </div>
@@ -1256,7 +1356,7 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
       ) : (
         <div className="rounded-2xl border border-dashed border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
           <Loader2 className="mr-2 inline h-3.5 w-3.5 animate-spin" />
-          РџСЂРѕРІРµСЂСЏСЋ СЃС‚Р°С‚СѓСЃ СЂРѕР±РѕС‚Р°вЂ¦
+          Проверяю статус робота…
         </div>
       )}
 
@@ -1280,11 +1380,11 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
         <div className="rounded-2xl border-2 border-emerald-500/40 bg-emerald-500/5 px-5 py-6 text-center">
           <CheckCircle2 className="mx-auto mb-2 h-6 w-6 text-emerald-500" />
           <div className="text-sm font-semibold text-foreground">
-            РџРµСЂРµРјРµС‰Р°С‚СЊ РЅРёС‡РµРіРѕ РЅРµ РЅСѓР¶РЅРѕ
+            Перемещать ничего не нужно
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            РџРѕ С‚РµРєСѓС‰РёРј РґР°РЅРЅС‹Рј СЃРєР»Р°РґС‹ СЂР°СЃРїСЂРµРґРµР»РµРЅС‹ СЂРѕРІРЅРѕ вЂ” Р·Р°РјРµС‚РЅРѕРіРѕ СЌС„С„РµРєС‚Р° РїРѕ
-            Р»РѕРєР°Р»РёР·Р°С†РёРё/РґРѕРїР»Р°С‚Рµ РЅРµ РїСЂРѕРіРЅРѕР·РёСЂСѓРµС‚СЃСЏ.
+            По текущим данным склады распределены ровно — заметного эффекта по
+            локализации/доплате не прогнозируется.
           </div>
         </div>
       ) : (
@@ -1293,15 +1393,15 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <Sparkles className="h-4 w-4 text-emerald-500" />
-                Р§С‚Рѕ РЅСѓР¶РЅРѕ СЃРґРµР»Р°С‚СЊ ({groupedByArticle.length}{groupedByArticle.length === 1 ? ' Р°СЂС‚РёРєСѓР»' : ' Р°СЂС‚РёРєСѓР»РѕРІ'} В· {sortedRecommendations.length} РїРµСЂРµРјРµС‰РµРЅРёР№)
+                Что нужно сделать ({groupedByArticle.length}{groupedByArticle.length === 1 ? ' артикул' : ' артикулов'} · {sortedRecommendations.length} перемещений)
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                РћРґРЅР° Р·Р°СЏРІРєР° РЅР° Р°СЂС‚РёРєСѓР» вЂ” РІРЅСѓС‚СЂРё РјР°СЂС€СЂСѓС‚С‹ Рё СЂР°Р·РјРµСЂС‹. РћС‚СЃРѕСЂС‚РёСЂРѕРІР°РЅРѕ РїРѕ РІС‹РіРѕРґРµ.
+                Одна заявка на артикул — внутри маршруты и размеры. Отсортировано по выгоде.
               </div>
             </div>
             {totalPages > 1 && (
               <div className="text-xs text-muted-foreground tabular-nums">
-                РџРѕРєР°Р·Р°РЅС‹ <span className="font-semibold text-foreground">{pageStart + 1}вЂ“{pageEnd}</span> РёР· {groupedByArticle.length} Р°СЂС‚РёРєСѓР»РѕРІ
+                Показаны <span className="font-semibold text-foreground">{pageStart + 1}–{pageEnd}</span> из {groupedByArticle.length} артикулов
               </div>
             )}
           </div>
@@ -1322,7 +1422,7 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
                 totalPages={totalPages}
                 onChange={(p) => {
                   setCurrentPage(p);
-                  // РїР»Р°РІРЅС‹Р№ СЃРєСЂРѕР»Р» Рє РЅР°С‡Р°Р»Сѓ СЃРїРёСЃРєР°
+                  // плавный скролл к началу списка
                   if (typeof window !== 'undefined') {
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }
@@ -1330,7 +1430,7 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
               />
             ) : (
               <span className="text-muted-foreground">
-                Р’СЃРµ {sortedRecommendations.length} РїРµСЂРµРјРµС‰РµРЅРёР№ РїРѕРєР°Р·Р°РЅС‹.
+                Все {sortedRecommendations.length} перемещений показаны.
               </span>
             )}
             <button
@@ -1340,7 +1440,7 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
               className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60 dark:text-emerald-300"
             >
               <FileSpreadsheet className="h-3.5 w-3.5" />
-              РЎРєР°С‡Р°С‚СЊ Excel СЃРѕ РІСЃРµРј РїР»Р°РЅРѕРј
+              Скачать Excel со всем планом
             </button>
           </div>
         </div>
@@ -1348,9 +1448,9 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
 
       {/* Footer note about methodology */}
       <div className="rounded-xl border border-border bg-muted/40 px-4 py-2 text-[11px] text-muted-foreground">
-        <span className="font-semibold">РљР°Рє СЃС‡РёС‚Р°РµРј:</span> {plan.assumptions.methodology}.
-        Р¦РµР»РµРІРѕРµ РїРѕРєСЂС‹С‚РёРµ вЂ” {plan.assumptions.targetCoverageDays} РґРЅ, РіРѕСЂРёР·РѕРЅС‚ РїСЂРѕРіРЅРѕР·Р° вЂ” {plan.assumptions.forecastHorizonDays} РґРЅ.
-        РџР»Р°РЅ РїРѕСЃС‚СЂРѕРµРЅ {new Date(plan.generatedAt).toLocaleString('ru-RU')}.
+        <span className="font-semibold">Как считаем:</span> {plan.assumptions.methodology}.
+        Целевое покрытие — {plan.assumptions.targetCoverageDays} дн, горизонт прогноза — {plan.assumptions.forecastHorizonDays} дн.
+        План построен {new Date(plan.generatedAt).toLocaleString('ru-RU')}.
       </div>
     </div>
   );
