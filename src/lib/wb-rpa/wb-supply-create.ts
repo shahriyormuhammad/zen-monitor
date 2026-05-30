@@ -30,6 +30,7 @@
 import { chromium, type BrowserContext, type Page } from 'playwright';
 
 import { logger } from '@/lib/logger';
+import { resolveWbWarehouseId } from '@/server/supply/geography';
 import {
   loadStorageStateSession,
   persistStorageStateFromContext,
@@ -241,122 +242,195 @@ export async function listWbWarehouses(tenantId: string): Promise<WbWarehouseIte
   });
 }
 
-/**
- * Create a WB supply draft, push goods, and (optionally) create the zero-cost
- * preorder. Never books a delivery date (captcha + financial commit stay with
- * the human).
- */
-export async function createWbSupply(
-  tenantId: string,
-  input: CreateWbSupplyInput,
-): Promise<CreateWbSupplyResult> {
-  // De-dupe + aggregate barcodes; drop empty/zero rows.
+/** De-dupe + aggregate barcodes; drop empty/zero rows. */
+function aggregateItems(items: SupplyDraftItem[]): SupplyDraftItem[] {
   const byBarcode = new Map<string, number>();
-  for (const it of input.items) {
+  for (const it of items) {
     const bc = String(it.barcode ?? '').trim();
     const qty = Math.max(0, Math.floor(Number(it.quantity) || 0));
     if (!bc || qty <= 0) continue;
     byBarcode.set(bc, (byBarcode.get(bc) ?? 0) + qty);
   }
-  const barcodes = [...byBarcode.entries()].map(([barcode, quantity]) => ({ barcode, quantity }));
-  if (barcodes.length === 0) {
-    throw new WbSupplyError('Нет ни одного штрихкода с количеством > 0.');
+  return [...byBarcode.entries()].map(([barcode, quantity]) => ({ barcode, quantity }));
+}
+
+type Rpc = <R = unknown>(pathSuffix: string, params: unknown, id?: string) => Promise<R>;
+
+type OneSupplyCore = {
+  draftID: string;
+  preorderID: number | null;
+  goodsBarcodes: number;
+  goodsUnits: number;
+  rejected: { barcode: string; reason: string }[];
+  warnings: string[];
+};
+
+/**
+ * Core flow for a single supply: create draft → push goods → verify; and if a
+ * warehouseId is given, validate + create the zero-cost preorder. Never books
+ * a date (`plan/add` — captcha + financial commit stay with the human).
+ */
+async function createOneSupply(
+  rpc: Rpc,
+  barcodes: SupplyDraftItem[],
+  warehouseId: number | null,
+  boxTypeID: number,
+  idTag = '',
+): Promise<OneSupplyCore> {
+  const warnings: string[] = [];
+
+  const created = await rpc<{ draftID: string }>(
+    '/ns/sm-draft/supply-manager/api/v1/draft/create', {}, `zen-draft-create${idTag}`,
+  );
+  const draftID = created.draftID;
+  if (!draftID) throw new WbSupplyError('WB не вернул draftID.');
+
+  await rpc('/ns/sm-draft/supply-manager/api/v1/draft/UpdateDraftGoods',
+    { draftID, barcodes }, `zen-draft-goods${idTag}`);
+
+  const listed = await rpc<{ goods: { barcode: string }[]; total: number; quantity: number }>(
+    '/ns/sm-draft/supply-manager/api/v1/draft/listDraftGoods',
+    { draftID, limit: 1000, offset: 0, filter: { orderBy: { barcode: 1 }, search: '' } },
+    `zen-draft-list${idTag}`,
+  );
+  const landedBarcodes = new Set((listed.goods ?? []).map((g) => g.barcode));
+  const goodsUnits = listed.quantity ?? barcodes.reduce((s, b) => s + b.quantity, 0);
+  const rejected: OneSupplyCore['rejected'] = barcodes
+    .filter((b) => !landedBarcodes.has(b.barcode))
+    .map((b) => ({ barcode: b.barcode, reason: 'не найден в карточках кабинета WB (баркод не привязан к товару)' }));
+  if (rejected.length > 0) {
+    warnings.push(`${rejected.length} штрихкод(ов) WB не принял — проверьте синхронизацию размеров (Настройки → Ростовки).`);
   }
 
+  let preorderID: number | null = null;
+  if (warehouseId) {
+    try {
+      const validated = await rpc<{ items: { barcode: string; hasError: boolean; errors: string[] }[] }>(
+        '/ns/sm/supply-manager/api/v1/plan/validateWarehouseGoodsV2',
+        { draftID, warehouseId, transitWarehouseId: null }, `zen-validate${idTag}`,
+      );
+      for (const it of validated.items ?? []) {
+        if (it.hasError) rejected.push({ barcode: it.barcode, reason: (it.errors ?? []).join('; ') || 'ошибка валидации' });
+      }
+    } catch (e) {
+      warnings.push(`Валидация склада не прошла: ${(e as Error).message}`);
+    }
+
+    const supply = await rpc<{ ids: { Id: number; boxTypeId: number; boxTypeName: string }[] }>(
+      '/ns/sm-supply/supply-manager/api/v1/supply/create',
+      { boxTypeID, draftID, warehouseId, transitWarehouseId: null, isBoxOnPallet: false, isContainer: false },
+      `zen-supply-create${idTag}`,
+    );
+    preorderID = supply.ids?.[0]?.Id ?? null;
+    if (!preorderID) warnings.push('WB не вернул ID преордера — создан только черновик.');
+  }
+
+  return { draftID, preorderID, goodsBarcodes: landedBarcodes.size, goodsUnits, rejected, warnings };
+}
+
+function deepLinkFor(core: OneSupplyCore): string {
+  return core.preorderID
+    ? SUPPLIES_PAGE
+    : `https://seller.wildberries.ru/supplies-management/new-supply/goods?draftID=${core.draftID}`;
+}
+
+/**
+ * Create a single WB supply draft (+ optional preorder). Kept for the simple
+ * (single-warehouse / draft-only) path.
+ */
+export async function createWbSupply(
+  tenantId: string,
+  input: CreateWbSupplyInput,
+): Promise<CreateWbSupplyResult> {
+  const barcodes = aggregateItems(input.items);
+  if (barcodes.length === 0) throw new WbSupplyError('Нет ни одного штрихкода с количеством > 0.');
   const boxTypeID = input.boxTypeID ?? WB_BOX_TYPE_KOROB;
   const warehouseId = input.warehouseId ?? null;
 
   return withSupplyApi(tenantId, async ({ rpc }) => {
-    const warnings: string[] = [];
+    const core = await createOneSupply(rpc, barcodes, warehouseId, boxTypeID);
+    logger.info({ tenantId, draftID: core.draftID, preorderID: core.preorderID, goods: core.goodsBarcodes, warehouseId },
+      '[wb-supply-create] supply prepared (stopped before plan/add)');
+    return { ...core, warehouseId, deepLink: deepLinkFor(core) };
+  });
+}
 
-    // A1 — create draft
-    const created = await rpc<{ draftID: string }>(
-      '/ns/sm-draft/supply-manager/api/v1/draft/create',
-      {},
-      'zen-draft-create',
-    );
-    const draftID = created.draftID;
-    if (!draftID) throw new WbSupplyError('WB не вернул draftID.');
+/* ── Batch: one preorder per warehouse, in a single browser session ──────── */
 
-    // A2 — push goods (barcodes + quantities)
-    await rpc('/ns/sm-draft/supply-manager/api/v1/draft/UpdateDraftGoods', {
-      draftID,
-      barcodes,
-    }, 'zen-draft-goods');
+export type SupplyGroupInput = {
+  /** Our План-поставки warehouse name (null = no warehouse → draft only). */
+  warehouseName: string | null;
+  items: SupplyDraftItem[];
+};
 
-    // A3 — read back what actually landed in the draft
-    const listed = await rpc<{ goods: { barcode: string }[]; total: number; quantity: number }>(
-      '/ns/sm-draft/supply-manager/api/v1/draft/listDraftGoods',
-      { draftID, limit: 1000, offset: 0, filter: { orderBy: { barcode: 1 }, search: '' } },
-      'zen-draft-list',
-    );
-    const landedBarcodes = new Set((listed.goods ?? []).map((g) => g.barcode));
-    const goodsUnits = listed.quantity ?? barcodes.reduce((s, b) => s + b.quantity, 0);
-    const notLanded = barcodes.filter((b) => !landedBarcodes.has(b.barcode));
-    const rejected: CreateWbSupplyResult['rejected'] = notLanded.map((b) => ({
-      barcode: b.barcode,
-      reason: 'не найден в карточках кабинета WB (баркод не привязан к товару)',
-    }));
-    if (notLanded.length > 0) {
-      warnings.push(
-        `${notLanded.length} штрихкод(ов) WB не принял — проверьте, что размеры синхронизированы (Настройки → Ростовки).`,
+export type SupplyGroupResult = {
+  warehouseName: string | null;
+  /** Resolved WB warehouse name (null if unmatched → draft only). */
+  wbWarehouseName: string | null;
+  warehouseId: number | null;
+  draftID: string;
+  preorderID: number | null;
+  goodsBarcodes: number;
+  goodsUnits: number;
+  rejected: { barcode: string; reason: string }[];
+  deepLink: string;
+  warnings: string[];
+};
+
+/**
+ * Create one supply per warehouse group in ONE session: fetch the WB warehouse
+ * list once, resolve each group's name → warehouseId, and run the draft(+
+ * preorder) flow for each. Groups whose warehouse can't be resolved fall back
+ * to a draft (the user then picks the warehouse). Never books a date.
+ */
+export async function createWbSupplyBatch(
+  tenantId: string,
+  groups: SupplyGroupInput[],
+  boxTypeIDArg?: number,
+): Promise<SupplyGroupResult[]> {
+  const boxTypeID = boxTypeIDArg ?? WB_BOX_TYPE_KOROB;
+  // Pre-aggregate + drop empty groups.
+  const prepared = groups
+    .map((g) => ({ warehouseName: g.warehouseName, barcodes: aggregateItems(g.items) }))
+    .filter((g) => g.barcodes.length > 0);
+  if (prepared.length === 0) throw new WbSupplyError('Нет ни одного штрихкода с количеством > 0.');
+
+  return withSupplyApi(tenantId, async ({ rpc }) => {
+    // WB warehouse list (for name → id resolution), fetched once.
+    let wbList: { warehouseId: number; warehouseName: string }[] = [];
+    try {
+      const res = await rpc<{ items: { warehouseID: number; warehouseName: string }[] }>(
+        '/ns/sm-supply/supply-manager/api/v1/warehouse/getWarehouseFilterItems', {}, 'zen-wh',
       );
+      wbList = (res.items ?? []).map((w) => ({ warehouseId: w.warehouseID, warehouseName: w.warehouseName }));
+    } catch (e) {
+      logger.warn({ err: e, tenantId }, '[wb-supply-create] warehouse list fetch failed — falling back to drafts');
     }
 
-    let preorderID: number | null = null;
-
-    if (warehouseId) {
-      // B1 — validate goods against the chosen warehouse
-      try {
-        const validated = await rpc<{ items: { barcode: string; hasError: boolean; errors: string[] }[] }>(
-          '/ns/sm/supply-manager/api/v1/plan/validateWarehouseGoodsV2',
-          { draftID, warehouseId, transitWarehouseId: null },
-          'zen-validate',
-        );
-        for (const it of validated.items ?? []) {
-          if (it.hasError) {
-            rejected.push({ barcode: it.barcode, reason: (it.errors ?? []).join('; ') || 'ошибка валидации' });
-          }
-        }
-      } catch (e) {
-        warnings.push(`Валидация склада не прошла: ${(e as Error).message}`);
+    const results: SupplyGroupResult[] = [];
+    let i = 0;
+    for (const g of prepared) {
+      i += 1;
+      const match = g.warehouseName ? resolveWbWarehouseId(g.warehouseName, wbList) : null;
+      const warnings: string[] = [];
+      if (g.warehouseName && !match) {
+        warnings.push(`Склад «${g.warehouseName}» не сопоставлен со складом WB — создан черновик, выбери склад вручную.`);
       }
-
-      // B2 — create the zero-cost preorder («Не запланировано»)
-      const supply = await rpc<{ ids: { Id: number; boxTypeId: number; boxTypeName: string }[] }>(
-        '/ns/sm-supply/supply-manager/api/v1/supply/create',
-        {
-          boxTypeID,
-          draftID,
-          warehouseId,
-          transitWarehouseId: null,
-          isBoxOnPallet: false,
-          isContainer: false,
-        },
-        'zen-supply-create',
-      );
-      preorderID = supply.ids?.[0]?.Id ?? null;
-      if (!preorderID) warnings.push('WB не вернул ID преордера — создан только черновик.');
+      const core = await createOneSupply(rpc, g.barcodes, match?.warehouseId ?? null, boxTypeID, `-${i}`);
+      results.push({
+        warehouseName: g.warehouseName,
+        wbWarehouseName: match?.warehouseName ?? null,
+        warehouseId: match?.warehouseId ?? null,
+        ...core,
+        warnings: [...warnings, ...core.warnings],
+        deepLink: deepLinkFor(core),
+      });
     }
-
-    const deepLink = preorderID
-      ? SUPPLIES_PAGE
-      : `https://seller.wildberries.ru/supplies-management/new-supply/goods?draftID=${draftID}`;
 
     logger.info(
-      { tenantId, draftID, preorderID, goods: landedBarcodes.size, warehouseId },
-      '[wb-supply-create] supply prepared (stopped before plan/add)',
+      { tenantId, groups: results.length, preorders: results.filter((r) => r.preorderID).length },
+      '[wb-supply-create] batch prepared (stopped before plan/add)',
     );
-
-    return {
-      draftID,
-      preorderID,
-      goodsBarcodes: landedBarcodes.size,
-      goodsUnits,
-      rejected,
-      warehouseId,
-      deepLink,
-      warnings,
-    };
+    return results;
   });
 }

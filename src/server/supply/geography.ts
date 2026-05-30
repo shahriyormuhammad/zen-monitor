@@ -288,6 +288,63 @@ function normaliseWarehouse(name: string): string {
     .trim();
 }
 
+/* Specialized WB warehouses we never want to auto-pick for shoes:
+ * СГТ = крупногабарит, «: Питание/Горючее/Шины» = niche lines. */
+const SPECIALIZED_WB = /(сгт|питание|горюч|шины)/i;
+
+/** Normalise a name for cross-system matching (drop WB/punctuation noise). */
+function normaliseForMatch(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\bwb\b/g, ' ')
+    .replace(/[()\-.,:№]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Resolve a План-поставки warehouse name (a `WAREHOUSE_TARIFFS` key like
+ * «Алексин (Тула)», «Краснодар», «Перспективный») to a real WB warehouse
+ * from `getWarehouseFilterItems` (e.g. «Тула», «Краснодар (Тихорецкая)»,
+ * «Екатеринбург - Перспективная 14»). Returns null if nothing matches
+ * confidently — caller should then fall back to a draft (let the user pick).
+ *
+ * Scoring: exact normalised name > shared city keyword > substring; minus a
+ * penalty for specialized (СГТ/Питание/…) warehouses; minus a small length
+ * penalty so the plain hub wins over numbered/qualified variants.
+ */
+export function resolveWbWarehouseId(
+  planName: string | null | undefined,
+  wbList: { warehouseId: number; warehouseName: string }[],
+): { warehouseId: number; warehouseName: string } | null {
+  if (!planName) return null;
+  const target = normaliseForMatch(planName);
+  if (!target) return null;
+
+  // Which city keyword does the План name carry?
+  let cityKey: string | null = null;
+  for (const [city] of WAREHOUSE_CITY_OKRUG) {
+    if (target.includes(city)) { cityKey = city; break; }
+  }
+
+  let best: { ref: { warehouseId: number; warehouseName: string }; score: number } | null = null;
+  for (const w of wbList) {
+    const wn = normaliseForMatch(w.warehouseName);
+    if (!wn) continue;
+    let score = 0;
+    if (wn === target) score = 100;
+    else if (cityKey && wn.includes(cityKey)) score = 60;
+    else if (wn.includes(target) || target.includes(wn)) score = 40;
+    if (score === 0) continue;
+    if (SPECIALIZED_WB.test(w.warehouseName)) score -= 35;
+    score -= Math.min(wn.length, 40) * 0.1;
+    if (!best || score > best.score) {
+      best = { ref: { warehouseId: w.warehouseId, warehouseName: w.warehouseName }, score };
+    }
+  }
+  return best?.ref ?? null;
+}
+
 /**
  * Resolve a WB warehouse name to its okrug. Returns null for pseudo
  * warehouses (aggregate rows, seller-own) and genuinely unknown names.
