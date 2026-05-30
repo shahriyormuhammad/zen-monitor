@@ -303,7 +303,9 @@ async function createOneSupply(
   }
 
   let preorderID: number | null = null;
-  if (warehouseId) {
+  if (warehouseId && landedBarcodes.size === 0) {
+    warnings.push('WB не принял ни одного штрихкода — поставку не создать (оставлен пустой черновик). Проверьте синхронизацию размеров.');
+  } else if (warehouseId) {
     try {
       const validated = await rpc<{ items: { barcode: string; hasError: boolean; errors: string[] }[] }>(
         '/ns/sm/supply-manager/api/v1/plan/validateWarehouseGoodsV2',
@@ -316,13 +318,25 @@ async function createOneSupply(
       warnings.push(`Валидация склада не прошла: ${(e as Error).message}`);
     }
 
-    const supply = await rpc<{ ids: { Id: number; boxTypeId: number; boxTypeName: string }[] }>(
-      '/ns/sm-supply/supply-manager/api/v1/supply/create',
-      { boxTypeID, draftID, warehouseId, transitWarehouseId: null, isBoxOnPallet: false, isContainer: false },
-      `zen-supply-create${idTag}`,
-    );
-    preorderID = supply.ids?.[0]?.Id ?? null;
-    if (!preorderID) warnings.push('WB не вернул ID преордера — создан только черновик.');
+    // supply/create can fail per-warehouse (e.g. транзитный/сортировочный склад
+    // не принимает прямую поставку коробом). Keep the draft + surface WB's
+    // reason instead of failing the whole batch.
+    try {
+      const supply = await rpc<{ ids: { Id: number; boxTypeId: number; boxTypeName: string }[] }>(
+        '/ns/sm-supply/supply-manager/api/v1/supply/create',
+        { boxTypeID, draftID, warehouseId, transitWarehouseId: null, isBoxOnPallet: false, isContainer: false },
+        `zen-supply-create${idTag}`,
+      );
+      preorderID = supply.ids?.[0]?.Id ?? null;
+      if (!preorderID) warnings.push('WB не вернул ID преордера — оставлен черновик.');
+    } catch (e) {
+      const raw = (e as Error).message;
+      const friendly = /Невозможно создать поставку|bad ?request/i.test(raw)
+        ? 'склад сейчас не принимает прямую поставку коробом (нет слотов или нужен транзит)'
+        : raw.replace(/^WB[^:]*:\s*/, '').slice(0, 160);
+      logger.warn({ warehouseId, draftID, err: raw.slice(0, 200) }, '[wb-supply-create] supply/create failed — left as draft');
+      warnings.push(`Склад не принял поставку: ${friendly}. Оставлен черновик с товарами — открой в WB и выбери склад/дату вручную.`);
+    }
   }
 
   return { draftID, preorderID, goodsBarcodes: landedBarcodes.size, goodsUnits, rejected, warnings };
@@ -416,15 +430,33 @@ export async function createWbSupplyBatch(
       if (g.warehouseName && !match) {
         warnings.push(`Склад «${g.warehouseName}» не сопоставлен со складом WB — создан черновик, выбери склад вручную.`);
       }
-      const core = await createOneSupply(rpc, g.barcodes, match?.warehouseId ?? null, boxTypeID, `-${i}`);
-      results.push({
-        warehouseName: g.warehouseName,
-        wbWarehouseName: match?.warehouseName ?? null,
-        warehouseId: match?.warehouseId ?? null,
-        ...core,
-        warnings: [...warnings, ...core.warnings],
-        deepLink: deepLinkFor(core),
-      });
+      try {
+        const core = await createOneSupply(rpc, g.barcodes, match?.warehouseId ?? null, boxTypeID, `-${i}`);
+        results.push({
+          warehouseName: g.warehouseName,
+          wbWarehouseName: match?.warehouseName ?? null,
+          warehouseId: match?.warehouseId ?? null,
+          ...core,
+          warnings: [...warnings, ...core.warnings],
+          deepLink: deepLinkFor(core),
+        });
+      } catch (e) {
+        // A whole group failed (e.g. draft/create itself errored). Record and
+        // keep going so other warehouses still get created.
+        logger.warn({ err: e, tenantId, warehouse: g.warehouseName }, '[wb-supply-create] group failed entirely');
+        results.push({
+          warehouseName: g.warehouseName,
+          wbWarehouseName: match?.warehouseName ?? null,
+          warehouseId: match?.warehouseId ?? null,
+          draftID: '',
+          preorderID: null,
+          goodsBarcodes: 0,
+          goodsUnits: 0,
+          rejected: [],
+          deepLink: SUPPLIES_PAGE,
+          warnings: [...warnings, `Ошибка: ${(e as Error).message.replace(/^WB[^:]*:\s*/, '')}`],
+        });
+      }
     }
 
     logger.info(
