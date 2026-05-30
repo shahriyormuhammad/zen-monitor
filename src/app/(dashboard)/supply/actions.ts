@@ -38,9 +38,11 @@ import {
 } from '@/server/supply-builder/export';
 import {
   createWbSupplyBatch,
+  listWbWarehousesCached,
   type SupplyGroupInput,
   type SupplyGroupResult,
 } from '@/lib/wb-rpa/wb-supply-create';
+import { warehouseToOkrug } from '@/server/supply/geography';
 
 export async function listSupplyArticlesAction(tenantId: string) {
   await requireTenantFeatureAccess(tenantId, 'supply');
@@ -265,31 +267,61 @@ function dateStamp(): string {
  */
 export async function createWbSupplyAction(
   tenantId: string,
+  overrideWarehouseId?: number | null,
 ): Promise<SupplyGroupResult[]> {
   await requireTenantFeatureAccess(tenantId, 'supply', ['owner', 'admin', 'manager']);
   const items = await listSupplyItems(tenantId);
   if (items.length === 0) throw new Error('Список поставки пуст');
 
-  // Aggregate barcode→qty per warehouse (null = без склада).
-  const byWarehouse = new Map<string | null, Map<string, number>>();
-  for (const item of items) {
-    const wh = item.warehouse?.trim() || null;
-    let bc = byWarehouse.get(wh);
-    if (!bc) { bc = new Map(); byWarehouse.set(wh, bc); }
-    for (const row of item.rows) {
-      if (row.total <= 0 || !row.barcode) continue;
-      bc.set(row.barcode, (bc.get(row.barcode) ?? 0) + row.total);
+  let groups: SupplyGroupInput[];
+
+  if (overrideWarehouseId) {
+    // Override: вся поставка одной поставкой на выбранный склад WB.
+    const bc = new Map<string, number>();
+    for (const item of items) {
+      for (const row of item.rows) {
+        if (row.total <= 0 || !row.barcode) continue;
+        bc.set(row.barcode, (bc.get(row.barcode) ?? 0) + row.total);
+      }
+    }
+    const groupItems = [...bc.entries()].map(([barcode, quantity]) => ({ barcode, quantity }));
+    if (groupItems.length === 0) {
+      throw new Error('Ни одного штрихкода — сначала подтяни размеры из WB в Настройках → Ростовки');
+    }
+    groups = [{ warehouseName: null, warehouseId: overrideWarehouseId, items: groupItems }];
+  } else {
+    // Авто: по складу из «Плана поставки» (null = без склада → черновик).
+    const byWarehouse = new Map<string | null, Map<string, number>>();
+    for (const item of items) {
+      const wh = item.warehouse?.trim() || null;
+      let bc = byWarehouse.get(wh);
+      if (!bc) { bc = new Map(); byWarehouse.set(wh, bc); }
+      for (const row of item.rows) {
+        if (row.total <= 0 || !row.barcode) continue;
+        bc.set(row.barcode, (bc.get(row.barcode) ?? 0) + row.total);
+      }
+    }
+    groups = [];
+    for (const [warehouseName, bc] of byWarehouse) {
+      const groupItems = [...bc.entries()].map(([barcode, quantity]) => ({ barcode, quantity }));
+      if (groupItems.length > 0) groups.push({ warehouseName, items: groupItems });
+    }
+    if (groups.length === 0) {
+      throw new Error('Ни одного штрихкода — сначала подтяни размеры из WB в Настройках → Ростовки');
     }
   }
 
-  const groups: SupplyGroupInput[] = [];
-  for (const [warehouseName, bc] of byWarehouse) {
-    const groupItems = [...bc.entries()].map(([barcode, quantity]) => ({ barcode, quantity }));
-    if (groupItems.length > 0) groups.push({ warehouseName, items: groupItems });
-  }
-  if (groups.length === 0) {
-    throw new Error('Ни одного штрихкода — сначала подтяни размеры из WB в Настройках → Ростовки');
-  }
-
   return createWbSupplyBatch(tenantId, groups);
+}
+
+/** Real WB warehouses for the dropdowns (cached). Excludes specialized lines. */
+export async function listWbWarehousesAction(
+  tenantId: string,
+): Promise<{ warehouseId: number; warehouseName: string; okrug: string | null }[]> {
+  await requireTenantFeatureAccess(tenantId, 'supply');
+  const list = await listWbWarehousesCached(tenantId);
+  return list
+    .filter((w) => !/(питание|горюч|шины)/i.test(w.warehouseName))
+    .map((w) => ({ warehouseId: w.warehouseId, warehouseName: w.warehouseName, okrug: warehouseToOkrug(w.warehouseName) }))
+    .sort((a, b) => a.warehouseName.localeCompare(b.warehouseName, 'ru'));
 }

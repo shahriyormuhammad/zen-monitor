@@ -18,7 +18,7 @@ import {
 import {
   addSupplyItemAction, clearSupplyItemsAction, listProfilesForArticleAction,
   listSupplyArticlesAction, listSupplyItemsAction, removeSupplyItemAction,
-  buildSupplyXlsxAction, createWbSupplyAction,
+  buildSupplyXlsxAction, createWbSupplyAction, listWbWarehousesAction,
 } from '@/app/(dashboard)/supply/actions';
 import type { ProfileForDropdown, SupplyItem } from '@/server/supply-builder/service';
 import { ArticleAutocomplete } from './ArticleAutocomplete';
@@ -153,10 +153,21 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
     onError: (e) => setExportMessage({ tone: 'err', text: e instanceof Error ? e.message : String(e) }),
   });
 
+  // Warehouse override (Шаг 1): pick a real WB warehouse for the whole supply.
+  const [overrideWarehouseId, setOverrideWarehouseId] = useState<number | null>(null);
+  const [whEnabled, setWhEnabled] = useState(false);
+  const warehousesQuery = useQuery({
+    queryKey: ['wb-warehouses', tenantId],
+    queryFn: () => listWbWarehousesAction(tenantId),
+    enabled: Boolean(tenantId) && whEnabled,
+    staleTime: 6 * 60 * 60 * 1000,
+  });
+  const overrideWh = (warehousesQuery.data ?? []).find((w) => w.warehouseId === overrideWarehouseId) ?? null;
+
   const [wbResult, setWbResult] = useState<Awaited<ReturnType<typeof createWbSupplyAction>> | null>(null);
   const [wbError, setWbError] = useState<string | null>(null);
   const createWbMutation = useMutation({
-    mutationFn: () => createWbSupplyAction(tenantId),
+    mutationFn: () => createWbSupplyAction(tenantId, overrideWarehouseId),
     onMutate: () => { setWbError(null); setWbResult(null); },
     onSuccess: (res) => setWbResult(res),
     onError: (e) => setWbError(e instanceof Error ? e.message : String(e)),
@@ -287,12 +298,29 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={overrideWarehouseId == null ? 'auto' : String(overrideWarehouseId)}
+                onMouseDown={() => { if (!whEnabled) setWhEnabled(true); }}
+                onChange={(e) => setOverrideWarehouseId(e.target.value === 'auto' ? null : Number(e.target.value))}
+                title="Склад поставки: «Авто» — по «Плану поставки»; либо выбери один склад WB для всей поставки (вкл. накладную)"
+                className="h-9 max-w-[220px] rounded-lg border border-border bg-card px-2 text-[11px] font-medium text-foreground outline-none focus:border-violet-400"
+              >
+                <option value="auto">Склад: Авто (по Плану)</option>
+                {whEnabled && warehousesQuery.isFetching && (warehousesQuery.data ?? []).length === 0 ? (
+                  <option value="__loading" disabled>загрузка складов WB…</option>
+                ) : null}
+                {(warehousesQuery.data ?? []).map((w) => (
+                  <option key={w.warehouseId} value={w.warehouseId}>{w.warehouseName}{w.okrug ? ` · ${w.okrug}` : ''}</option>
+                ))}
+              </select>
               <button
                 type="button"
                 onClick={() => {
-                  const whMsg = warehouseCount > 1
-                    ? `Позиции разложены по ${warehouseCount} склад(ам) — создам по поставке на каждый.`
-                    : `Заполню товары (${fmtNum(totalPieces)} шт) в поставку.`;
+                  const whMsg = overrideWarehouseId
+                    ? `Вся поставка (${fmtNum(totalPieces)} шт) уйдёт на склад «${overrideWh?.warehouseName ?? 'выбранный'}» одной поставкой.`
+                    : warehouseCount > 1
+                      ? `Позиции разложены по ${warehouseCount} склад(ам) из Плана — создам по поставке на каждый.`
+                      : `Заполню товары (${fmtNum(totalPieces)} шт) в поставку.`;
                   if (window.confirm(
                     `Создать поставку(и) прямо в кабинете WB?\n\n${whMsg}\n` +
                     `Дату поставки выберешь сам в WB — это финансовый шаг с капчей, его не автоматизирую.`,
@@ -300,7 +328,7 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
                 }}
                 disabled={createWbMutation.isPending || hasMissingBc}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-2 text-[11px] font-bold text-violet-800 hover:bg-violet-100 disabled:opacity-40 dark:border-violet-700/40 dark:bg-violet-950/30 dark:text-violet-200"
-                title="Автозаполнить товары в новый черновик поставки в кабинете WB"
+                title="Автозаполнить товары в поставку в кабинете WB"
               >
                 {createWbMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                 Создать в WB

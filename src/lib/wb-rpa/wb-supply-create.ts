@@ -242,6 +242,20 @@ export async function listWbWarehouses(tenantId: string): Promise<WbWarehouseIte
   });
 }
 
+/**
+ * Cached warehouse list. WB warehouseIDs are global (same for all sellers), so
+ * we cache the list in-process to avoid launching Chrome for every dropdown.
+ * Any tenant's session can populate it.
+ */
+let _whCache: { at: number; items: WbWarehouseItem[] } | null = null;
+const WH_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+export async function listWbWarehousesCached(tenantId: string): Promise<WbWarehouseItem[]> {
+  if (_whCache && Date.now() - _whCache.at < WH_CACHE_TTL_MS) return _whCache.items;
+  const items = await listWbWarehouses(tenantId);
+  if (items.length > 0) _whCache = { at: Date.now(), items };
+  return items;
+}
+
 /** De-dupe + aggregate barcodes; drop empty/zero rows. */
 function aggregateItems(items: SupplyDraftItem[]): SupplyDraftItem[] {
   const byBarcode = new Map<string, number>();
@@ -374,6 +388,8 @@ export async function createWbSupply(
 export type SupplyGroupInput = {
   /** Our План-поставки warehouse name (null = no warehouse → draft only). */
   warehouseName: string | null;
+  /** Explicit WB warehouseId (override) — used directly, skips name resolution. */
+  warehouseId?: number | null;
   items: SupplyDraftItem[];
 };
 
@@ -405,7 +421,7 @@ export async function createWbSupplyBatch(
   const boxTypeID = boxTypeIDArg ?? WB_BOX_TYPE_KOROB;
   // Pre-aggregate + drop empty groups.
   const prepared = groups
-    .map((g) => ({ warehouseName: g.warehouseName, barcodes: aggregateItems(g.items) }))
+    .map((g) => ({ warehouseName: g.warehouseName, warehouseId: g.warehouseId ?? null, barcodes: aggregateItems(g.items) }))
     .filter((g) => g.barcodes.length > 0);
   if (prepared.length === 0) throw new WbSupplyError('Нет ни одного штрихкода с количеством > 0.');
 
@@ -425,9 +441,15 @@ export async function createWbSupplyBatch(
     let i = 0;
     for (const g of prepared) {
       i += 1;
-      const match = g.warehouseName ? resolveWbWarehouseId(g.warehouseName, wbList) : null;
+      let match: { warehouseId: number; warehouseName: string } | null = null;
+      if (g.warehouseId != null) {
+        const found = wbList.find((w) => w.warehouseId === g.warehouseId);
+        match = { warehouseId: g.warehouseId, warehouseName: found?.warehouseName ?? g.warehouseName ?? `#${g.warehouseId}` };
+      } else if (g.warehouseName) {
+        match = resolveWbWarehouseId(g.warehouseName, wbList);
+      }
       const warnings: string[] = [];
-      if (g.warehouseName && !match) {
+      if (g.warehouseName && g.warehouseId == null && !match) {
         warnings.push(`Склад «${g.warehouseName}» не сопоставлен со складом WB — создан черновик, выбери склад вручную.`);
       }
       try {

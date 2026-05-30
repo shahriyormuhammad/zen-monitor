@@ -21,6 +21,7 @@ import {
   assembleSupplyFromPlanAction,
 } from '@/app/(dashboard)/supply/actions';
 import type { DistributionResult, SupplyStrategy } from '@/server/supply/distribution';
+import { warehousesInOkrug, type Okrug } from '@/server/supply/geography';
 import { ArticleAutocomplete } from './ArticleAutocomplete';
 import { DeficitClusters } from './DeficitClusters';
 import { DeficitWidgets } from './DeficitWidgets';
@@ -193,6 +194,12 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
   const removeItem = (id: string) => setItems((prev) => prev.filter((p) => p.id !== id));
   const toggleExpanded = (id: string) =>
     setItems((prev) => prev.map((p) => p.id === id ? { ...p, expanded: !p.expanded } : p));
+  /* Per-okrug warehouse override: changes which warehouse this okrug ships to. */
+  const setRowWarehouse = useCallback((itemId: string, okrug: string, warehouse: string) => {
+    setItems((prev) => prev.map((p) => p.id === itemId
+      ? { ...p, distribution: p.distribution.map((r) => r.okrug === okrug ? { ...r, warehouse } : r) }
+      : p));
+  }, []);
   const toggleSelected = (id: string) =>
     setItems((prev) => prev.map((p) => p.id === id ? { ...p, selected: !p.selected } : p));
   const clearAll = () => setItems([]);
@@ -356,6 +363,7 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
                     onToggleSelected={() => toggleSelected(item.id)}
                     onRemove={() => removeItem(item.id)}
                     onRetry={() => recomputeDistribution(item, strategy)}
+                    onWarehouseChange={(okrug, wh) => setRowWarehouse(item.id, okrug, wh)}
                   />
                 ))}
               </tbody>
@@ -542,7 +550,7 @@ function StrategySwitch({ value, onChange }: { value: SupplyStrategy; onChange: 
 }
 
 function PlannedRow({
-  item, idx, onToggleExpand, onToggleSelected, onRemove, onRetry,
+  item, idx, onToggleExpand, onToggleSelected, onRemove, onRetry, onWarehouseChange,
 }: {
   item: PlannedItem;
   idx: number;
@@ -550,6 +558,7 @@ function PlannedRow({
   onToggleSelected: () => void;
   onRemove: () => void;
   onRetry: () => void;
+  onWarehouseChange: (okrug: string, warehouse: string) => void;
 }) {
   const status = item.status;
   const statusPill = (
@@ -638,7 +647,25 @@ function PlannedRow({
                     <td className="px-2 py-1 text-right font-mono font-bold text-rose-700">{fmtNum(row.need)}</td>
                     <td className="px-2 py-1 text-right font-mono">{(row.pct * 100).toFixed(1)}%</td>
                     <td className="px-2 py-1 text-right font-mono font-bold">{fmtNum(row.qty)}</td>
-                    <td className="px-2 py-1">{row.warehouse}</td>
+                    <td className="px-2 py-1">
+                      {(() => {
+                        const opts = warehousesInOkrug(row.okrug as Okrug);
+                        const hasCurrent = opts.some((w) => w.name === row.warehouse);
+                        return (
+                          <select
+                            value={row.warehouse}
+                            onChange={(e) => onWarehouseChange(row.okrug, e.target.value)}
+                            className="max-w-[190px] rounded border border-border bg-card px-1 py-0.5 text-[11px] outline-none focus:border-rose-400"
+                            title="Склад для этого округа — можно поменять; «Создать в WB» создаст поставку именно на него"
+                          >
+                            {!hasCurrent && row.warehouse ? <option value={row.warehouse}>{row.warehouse}</option> : null}
+                            {opts.map((w) => (
+                              <option key={w.name} value={w.name}>{w.name}</option>
+                            ))}
+                          </select>
+                        );
+                      })()}
+                    </td>
                   </tr>
                 ))}
                 <tr className="border-t border-border bg-card/50 font-bold">
