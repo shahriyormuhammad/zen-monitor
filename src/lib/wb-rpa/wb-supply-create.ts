@@ -361,18 +361,24 @@ async function createOneSupply(
     // Parse available acceptance dates (read-only) so the user can pick the
     // cheapest/free date before booking. Non-fatal.
     if (preorderID) {
-      try {
-        const now = new Date();
-        const costs = await rpc<{ costs: { date: string; cost: number; coefficient: number }[] }>(
-          '/ns/sm-supply/supply-manager/api/v1/supply/getAcceptanceCosts',
-          { dateFrom: now.toISOString(), dateTo: new Date(now.getTime() + 30 * 86_400_000).toISOString(), preorderID },
-          `zen-costs${idTag}`,
-        );
-        availableDates = (costs.costs ?? [])
-          .filter((c) => c.coefficient >= 0)
-          .slice(0, 31)
-          .map((c) => ({ date: c.date, coefficient: c.coefficient, cost: c.cost }));
-      } catch { /* dates are a nice-to-have */ }
+      const now = new Date();
+      const dateFrom = now.toISOString();
+      const dateTo = new Date(now.getTime() + 30 * 86_400_000).toISOString();
+      // The cost calendar can lag a beat right after supply/create — retry briefly.
+      for (let attempt = 0; attempt < 3 && availableDates.length === 0; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 1200));
+        try {
+          const costs = await rpc<{ costs: { date: string; cost: number; coefficient: number }[] }>(
+            '/ns/sm-supply/supply-manager/api/v1/supply/getAcceptanceCosts',
+            { dateFrom, dateTo, preorderID },
+            `zen-costs${idTag}-${attempt}`,
+          );
+          availableDates = (costs.costs ?? [])
+            .filter((c) => c.coefficient >= 0)
+            .slice(0, 31)
+            .map((c) => ({ date: c.date, coefficient: c.coefficient, cost: c.cost }));
+        } catch { /* retry */ }
+      }
     }
   }
 
