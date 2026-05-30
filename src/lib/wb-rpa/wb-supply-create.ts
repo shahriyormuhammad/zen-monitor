@@ -49,6 +49,19 @@ const SUPPLIES_PAGE = 'https://seller.wildberries.ru/supplies-management/all-sup
 /** boxTypeID 2 = «Короб». Other values: 5 = «Монопаллета», 6 = «Суперсейф». */
 export const WB_BOX_TYPE_KOROB = 2;
 
+const sleep = (ms: number) => new Promise<void>((r) => { setTimeout(r, ms); });
+
+/**
+ * WB's draft backend is eventually-consistent: right after draft/create +
+ * UpdateDraftGoods, reads (listDraftGoods / validate / supply/create) can
+ * briefly fail with «draft not found» (-32000) or internal «fail to get draft
+ * goods» (-32603). These are transient → settle + retry.
+ */
+function isTransientDraftError(e: unknown): boolean {
+  const m = e instanceof Error ? e.message : String(e);
+  return /draft.?not.?found|draft_not_found|fail to get draft|list draft goods error|error\.internal|-32603|-32000/i.test(m);
+}
+
 export type SupplyDraftItem = { barcode: string; quantity: number };
 
 export type WbWarehouseItem = { warehouseId: number; warehouseName: string };
@@ -399,20 +412,39 @@ async function createOneSupply(
 ): Promise<OneSupplyCore> {
   const warnings: string[] = [];
 
-  const created = await rpc<{ draftID: string }>(
-    '/ns/sm-draft/supply-manager/api/v1/draft/create', {}, `zen-draft-create${idTag}`,
-  );
-  const draftID = created.draftID;
-  if (!draftID) throw new WbSupplyError('WB не вернул draftID.');
+  // Create draft + push goods + read them back. WB's draft backend is
+  // eventually-consistent, so retry the whole unit (fresh draft each attempt)
+  // on transient errors, with a settle delay after pushing goods.
+  let draftID = '';
+  let listed: { goods: { barcode: string }[]; total: number; quantity: number } | null = null;
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 4 && !listed; attempt++) {
+    if (attempt > 0) await sleep(900);
+    try {
+      const created = await rpc<{ draftID: string }>(
+        '/ns/sm-draft/supply-manager/api/v1/draft/create', {}, `zen-draft-create${idTag}-${attempt}`,
+      );
+      draftID = created.draftID;
+      if (!draftID) throw new WbSupplyError('WB не вернул draftID.');
+      await rpc('/ns/sm-draft/supply-manager/api/v1/draft/UpdateDraftGoods',
+        { draftID, barcodes }, `zen-draft-goods${idTag}-${attempt}`);
+      await sleep(barcodes.length > 8 ? 1500 : 700); // let the draft settle before reading
+      const res = await rpc<{ goods: { barcode: string }[]; total: number; quantity: number }>(
+        '/ns/sm-draft/supply-manager/api/v1/draft/listDraftGoods',
+        { draftID, limit: 1000, offset: 0, filter: { orderBy: { barcode: 1 }, search: '' } },
+        `zen-draft-list${idTag}-${attempt}`,
+      );
+      if ((res.total ?? 0) > 0 || barcodes.length === 0) { listed = res; break; }
+      lastErr = new WbSupplyError('черновик ещё не наполнился'); // pushed goods but 0 landed → retry
+    } catch (e) {
+      lastErr = e;
+      if (!isTransientDraftError(e) && attempt >= 3) throw e;
+    }
+  }
+  if (!listed) {
+    throw new WbSupplyError(`Не удалось создать черновик WB (повторите): ${lastErr instanceof Error ? lastErr.message.replace(/^WB[^:]*:\s*/, '').slice(0, 120) : ''}`);
+  }
 
-  await rpc('/ns/sm-draft/supply-manager/api/v1/draft/UpdateDraftGoods',
-    { draftID, barcodes }, `zen-draft-goods${idTag}`);
-
-  const listed = await rpc<{ goods: { barcode: string }[]; total: number; quantity: number }>(
-    '/ns/sm-draft/supply-manager/api/v1/draft/listDraftGoods',
-    { draftID, limit: 1000, offset: 0, filter: { orderBy: { barcode: 1 }, search: '' } },
-    `zen-draft-list${idTag}`,
-  );
   const landedBarcodes = new Set((listed.goods ?? []).map((g) => g.barcode));
   const goodsUnits = listed.quantity ?? barcodes.reduce((s, b) => s + b.quantity, 0);
   const rejected: OneSupplyCore['rejected'] = barcodes
@@ -427,31 +459,46 @@ async function createOneSupply(
   if (warehouseId && landedBarcodes.size === 0) {
     warnings.push('WB не принял ни одного штрихкода — поставку не создать (оставлен пустой черновик). Проверьте синхронизацию размеров.');
   } else if (warehouseId) {
-    try {
-      const validated = await rpc<{ items: { barcode: string; hasError: boolean; errors: string[] }[] }>(
-        '/ns/sm/supply-manager/api/v1/plan/validateWarehouseGoodsV2',
-        { draftID, warehouseId, transitWarehouseId: null }, `zen-validate${idTag}`,
-      );
-      for (const it of validated.items ?? []) {
-        if (it.hasError) rejected.push({ barcode: it.barcode, reason: (it.errors ?? []).join('; ') || 'ошибка валидации' });
+    // validate (retry transient draft errors, non-fatal)
+    for (let a = 0; a < 3; a++) {
+      try {
+        const validated = await rpc<{ items: { barcode: string; hasError: boolean; errors: string[] }[] }>(
+          '/ns/sm/supply-manager/api/v1/plan/validateWarehouseGoodsV2',
+          { draftID, warehouseId, transitWarehouseId: null }, `zen-validate${idTag}-${a}`,
+        );
+        for (const it of validated.items ?? []) {
+          if (it.hasError) rejected.push({ barcode: it.barcode, reason: (it.errors ?? []).join('; ') || 'ошибка валидации' });
+        }
+        break;
+      } catch (e) {
+        if (isTransientDraftError(e) && a < 2) { await sleep(900); continue; }
+        warnings.push(`Валидация склада не прошла: ${(e as Error).message.replace(/^WB[^:]*:\s*/, '').slice(0, 120)}`);
+        break;
       }
-    } catch (e) {
-      warnings.push(`Валидация склада не прошла: ${(e as Error).message}`);
     }
 
-    // supply/create can fail per-warehouse (e.g. транзитный/сортировочный склад
-    // не принимает прямую поставку коробом). Keep the draft + surface WB's
-    // reason instead of failing the whole batch.
-    try {
-      const supply = await rpc<{ ids: { Id: number; boxTypeId: number; boxTypeName: string }[] }>(
-        '/ns/sm-supply/supply-manager/api/v1/supply/create',
-        { boxTypeID, draftID, warehouseId, transitWarehouseId: null, isBoxOnPallet: false, isContainer: false },
-        `zen-supply-create${idTag}`,
-      );
-      preorderID = supply.ids?.[0]?.Id ?? null;
-      if (!preorderID) warnings.push('WB не вернул ID преордера — оставлен черновик.');
-    } catch (e) {
-      const raw = (e as Error).message;
+    // supply/create — retry transient draft errors; surface the real WB reason
+    // (e.g. транзитный/сортировочный склад не принимает прямую поставку).
+    let createErr: unknown = null;
+    for (let a = 0; a < 3; a++) {
+      try {
+        const supply = await rpc<{ ids: { Id: number; boxTypeId: number; boxTypeName: string }[] }>(
+          '/ns/sm-supply/supply-manager/api/v1/supply/create',
+          { boxTypeID, draftID, warehouseId, transitWarehouseId: null, isBoxOnPallet: false, isContainer: false },
+          `zen-supply-create${idTag}-${a}`,
+        );
+        preorderID = supply.ids?.[0]?.Id ?? null;
+        createErr = null;
+        if (!preorderID) warnings.push('WB не вернул ID преордера — оставлен черновик.');
+        break;
+      } catch (e) {
+        createErr = e;
+        if (isTransientDraftError(e) && a < 2) { await sleep(1000); continue; }
+        break;
+      }
+    }
+    if (createErr) {
+      const raw = (createErr as Error).message;
       const friendly = /Невозможно создать поставку|bad ?request/i.test(raw)
         ? 'склад сейчас не принимает прямую поставку коробом (нет слотов или нужен транзит)'
         : raw.replace(/^WB[^:]*:\s*/, '').slice(0, 160);
