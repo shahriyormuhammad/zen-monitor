@@ -40,7 +40,10 @@ export function buildSupplyAoa(items: SupplyItem[]): SupplyAoaResult {
       byBarcode.set(row.barcode, prev + row.total);
     }
   }
-  const aoa: Array<Array<string | number>> = [['Баркод товара', 'Кол-во товаров']];
+  // ВАЖНО: заголовки и имя листа должны быть РОВНО как в шаблоне WB
+  // (лист "Sheet1", колонки "Баркод" и "Количество") — иначе кабинет
+  // отклоняет файл при загрузке товаров в поставку.
+  const aoa: Array<Array<string | number>> = [['Баркод', 'Количество']];
   for (const [barcode, qty] of byBarcode.entries()) {
     aoa.push([barcode, qty]);
   }

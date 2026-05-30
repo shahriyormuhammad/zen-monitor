@@ -32,7 +32,6 @@ import {
 import {
   buildShkAoa,
   buildSupplyAoa,
-  buildSupplyWorkbookByWarehouse,
   toXlsxBuffer,
   type ShkAoaResult,
   type SupplyAoaResult,
@@ -208,21 +207,13 @@ export async function buildSupplyXlsxAction(tenantId: string): Promise<{ filenam
     throw new Error('Ни одного штрихкода — сначала подтяни размеры из WB в Настройках → Ростовки');
   }
 
-  // If any item is routed to a warehouse (assembled from План поставки),
-  // produce a multi-sheet workbook — one WB-ready sheet per warehouse.
-  const hasWarehouses = items.some((i) => i.warehouse);
-  if (hasWarehouses) {
-    const wbResult = await buildSupplyWorkbookByWarehouse(items);
-    return {
-      filename: `postavka_po_skladam_${dateStamp()}.xlsx`,
-      base64: wbResult.buffer.toString('base64'),
-      summary,
-    };
-  }
-
-  const buffer = await toXlsxBuffer(summary.aoa, 'Поставка');
+  // WB принимает файл товаров ТОЛЬКО в своём формате: один лист «Sheet1»,
+  // колонки «Баркод» / «Количество». Поэтому отдаём строго один лист со
+  // всеми баркодами. (Разбивку по складам в отдельные файлы/ZIP добавим
+  // отдельно — WB на загрузке читает только один лист.)
+  const buffer = await toXlsxBuffer(summary.aoa, 'Sheet1');
   return {
-    filename: `postavka_${dateStamp()}.xlsx`,
+    filename: `postavka_wb_${dateStamp()}.xlsx`,
     base64: buffer.toString('base64'),
     summary,
   };

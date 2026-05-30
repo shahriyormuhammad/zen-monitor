@@ -49,6 +49,8 @@ export function SizeProfilesCard() {
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
+  const [showAll, setShowAll] = useState(false);
+  const COLLAPSED_COUNT = 6;
   const [editorState, setEditorState] = useState<{
     mode: 'create' | 'edit';
     article: ArticleEntry;
@@ -214,35 +216,67 @@ export function SizeProfilesCard() {
         <div className="rounded-2xl border border-dashed border-border p-6 text-center text-[12px] text-muted-foreground">
           По запросу «{search}» ничего не найдено.
         </div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {filteredArticles.slice(0, 200).map((article) => (
-            <ArticleRow
-              key={article.nmId}
-              article={article}
-              profiles={profilesByNmId.get(article.nmId) ?? []}
-              wbSizesCount={wbSizesCountByNmId[String(article.nmId)] ?? 0}
-              onCreate={() => setEditorState({ mode: 'create', article })}
-              onEdit={(profile) => setEditorState({ mode: 'edit', article, profile })}
-              onDelete={(id) => {
-                if (window.confirm('Удалить этот профиль?')) deleteMutation.mutate(id);
-              }}
-              onSetDefault={(id) => setDefaultMutation.mutate(id)}
-              onRebuild={() => {
-                if (window.confirm('Удалить автогенерированные профили этого артикула и создать новые по актуальным размерам?')) {
-                  rebuildMutation.mutate({ nmId: article.nmId, vendorCode: article.vendorCode });
-                }
-              }}
-              rebuilding={rebuildMutation.isPending && rebuildMutation.variables?.nmId === article.nmId}
-            />
-          ))}
-          {filteredArticles.length > 200 ? (
-            <div className="pt-2 text-center text-[11px] text-muted-foreground">
-              Показано 200 из {filteredArticles.length}. Используй поиск, чтобы сузить список.
-            </div>
-          ) : null}
-        </div>
-      )}
+      ) : (() => {
+        // По умолчанию показываем 6 карточек; «Показать всё» раскрывает список.
+        // При активном поиске показываем все совпадения (до 200).
+        const searching = search.trim().length > 0;
+        const expandedList = searching || showAll;
+        const visible = expandedList
+          ? filteredArticles.slice(0, 200)
+          : filteredArticles.slice(0, COLLAPSED_COUNT);
+        const hiddenCount = filteredArticles.length - visible.length;
+        return (
+          <div className="flex flex-col gap-2">
+            {visible.map((article) => (
+              <ArticleRow
+                key={article.nmId}
+                article={article}
+                profiles={profilesByNmId.get(article.nmId) ?? []}
+                wbSizesCount={wbSizesCountByNmId[String(article.nmId)] ?? 0}
+                onCreate={() => setEditorState({ mode: 'create', article })}
+                onEdit={(profile) => setEditorState({ mode: 'edit', article, profile })}
+                onDelete={(id) => {
+                  if (window.confirm('Удалить этот профиль?')) deleteMutation.mutate(id);
+                }}
+                onSetDefault={(id) => setDefaultMutation.mutate(id)}
+                onRebuild={() => {
+                  if (window.confirm('Удалить автогенерированные профили этого артикула и создать новые по актуальным размерам?')) {
+                    rebuildMutation.mutate({ nmId: article.nmId, vendorCode: article.vendorCode });
+                  }
+                }}
+                rebuilding={rebuildMutation.isPending && rebuildMutation.variables?.nmId === article.nmId}
+              />
+            ))}
+
+            {/* Кнопка раскрытия — только без поиска и если есть что прятать */}
+            {!searching && !showAll && filteredArticles.length > COLLAPSED_COUNT ? (
+              <button
+                type="button"
+                onClick={() => setShowAll(true)}
+                className="mt-1 inline-flex items-center justify-center gap-1.5 self-center rounded-lg border border-border bg-card px-4 py-2 text-[12px] font-bold text-foreground hover:border-rose-400"
+              >
+                <ChevronDown className="h-4 w-4" />
+                Показать все {filteredArticles.length} артикулов
+              </button>
+            ) : null}
+            {!searching && showAll && filteredArticles.length > COLLAPSED_COUNT ? (
+              <button
+                type="button"
+                onClick={() => setShowAll(false)}
+                className="mt-1 inline-flex items-center justify-center gap-1.5 self-center rounded-lg border border-border bg-card px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground"
+              >
+                <ChevronUp className="h-4 w-4" />
+                Свернуть
+              </button>
+            ) : null}
+            {searching && hiddenCount > 0 ? (
+              <div className="pt-2 text-center text-[11px] text-muted-foreground">
+                Показано {visible.length} из {filteredArticles.length}. Уточни поиск.
+              </div>
+            ) : null}
+          </div>
+        );
+      })()}
 
       {editorState ? (
         <ProfileEditorModal
