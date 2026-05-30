@@ -418,8 +418,11 @@ async function createOneSupply(
   let draftID = '';
   let listed: { goods: { barcode: string }[]; total: number; quantity: number } | null = null;
   let lastErr: unknown = null;
-  for (let attempt = 0; attempt < 4 && !listed; attempt++) {
-    if (attempt > 0) await sleep(900);
+  const ATTEMPTS = 6;
+  // Larger drafts take WB longer to become consistent — scale the settle wait.
+  const settleMs = Math.min(3000, 800 + barcodes.length * 100);
+  for (let attempt = 0; attempt < ATTEMPTS && !listed; attempt++) {
+    if (attempt > 0) await sleep(1200 + attempt * 500); // increasing backoff
     try {
       const created = await rpc<{ draftID: string }>(
         '/ns/sm-draft/supply-manager/api/v1/draft/create', {}, `zen-draft-create${idTag}-${attempt}`,
@@ -428,7 +431,7 @@ async function createOneSupply(
       if (!draftID) throw new WbSupplyError('WB не вернул draftID.');
       await rpc('/ns/sm-draft/supply-manager/api/v1/draft/UpdateDraftGoods',
         { draftID, barcodes }, `zen-draft-goods${idTag}-${attempt}`);
-      await sleep(barcodes.length > 8 ? 1500 : 700); // let the draft settle before reading
+      await sleep(settleMs); // let the draft settle before reading
       const res = await rpc<{ goods: { barcode: string }[]; total: number; quantity: number }>(
         '/ns/sm-draft/supply-manager/api/v1/draft/listDraftGoods',
         { draftID, limit: 1000, offset: 0, filter: { orderBy: { barcode: 1 }, search: '' } },
@@ -438,7 +441,7 @@ async function createOneSupply(
       lastErr = new WbSupplyError('черновик ещё не наполнился'); // pushed goods but 0 landed → retry
     } catch (e) {
       lastErr = e;
-      if (!isTransientDraftError(e) && attempt >= 3) throw e;
+      if (!isTransientDraftError(e) && attempt >= ATTEMPTS - 1) throw e;
     }
   }
   if (!listed) {
