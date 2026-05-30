@@ -155,6 +155,7 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
 
   // Warehouse override (Шаг 1): pick a real WB warehouse for the whole supply.
   const [overrideWarehouseId, setOverrideWarehouseId] = useState<number | null>(null);
+  const [whInput, setWhInput] = useState('');
   const [whEnabled, setWhEnabled] = useState(false);
   const warehousesQuery = useQuery({
     queryKey: ['wb-warehouses', tenantId],
@@ -163,6 +164,11 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
     staleTime: 6 * 60 * 60 * 1000,
   });
   const overrideWh = (warehousesQuery.data ?? []).find((w) => w.warehouseId === overrideWarehouseId) ?? null;
+  const onWhInput = (val: string) => {
+    setWhInput(val);
+    const found = (warehousesQuery.data ?? []).find((w) => w.warehouseName.toLowerCase() === val.trim().toLowerCase());
+    setOverrideWarehouseId(found ? found.warehouseId : null);
+  };
 
   const [wbResult, setWbResult] = useState<Awaited<ReturnType<typeof createWbSupplyAction>> | null>(null);
   const [wbError, setWbError] = useState<string | null>(null);
@@ -298,21 +304,20 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={overrideWarehouseId == null ? 'auto' : String(overrideWarehouseId)}
-                onMouseDown={() => { if (!whEnabled) setWhEnabled(true); }}
-                onChange={(e) => setOverrideWarehouseId(e.target.value === 'auto' ? null : Number(e.target.value))}
-                title="Склад поставки: «Авто» — по «Плану поставки»; либо выбери один склад WB для всей поставки (вкл. накладную)"
-                className="h-9 max-w-[220px] rounded-lg border border-border bg-card px-2 text-[11px] font-medium text-foreground outline-none focus:border-violet-400"
-              >
-                <option value="auto">Склад: Авто (по Плану)</option>
-                {whEnabled && warehousesQuery.isFetching && (warehousesQuery.data ?? []).length === 0 ? (
-                  <option value="__loading" disabled>загрузка складов WB…</option>
-                ) : null}
+              <input
+                list="wb-wh-datalist"
+                value={whInput}
+                onFocus={() => { if (!whEnabled) setWhEnabled(true); }}
+                onChange={(e) => onWhInput(e.target.value)}
+                placeholder={whEnabled && warehousesQuery.isFetching ? 'загрузка складов…' : 'Склад: Авто (по Плану)'}
+                title="Печатай склад (напр. «Тула») и выбери из списка. Пусто = Авто по Плану."
+                className={`h-9 w-[210px] rounded-lg border bg-card px-2 text-[11px] font-medium text-foreground outline-none focus:border-violet-400 ${overrideWh ? 'border-violet-400' : 'border-border'}`}
+              />
+              <datalist id="wb-wh-datalist">
                 {(warehousesQuery.data ?? []).map((w) => (
-                  <option key={w.warehouseId} value={w.warehouseId}>{w.warehouseName}{w.okrug ? ` · ${w.okrug}` : ''}</option>
+                  <option key={w.warehouseId} value={w.warehouseName}>{w.okrug ?? ''}</option>
                 ))}
-              </select>
+              </datalist>
               <button
                 type="button"
                 onClick={() => {
@@ -396,6 +401,20 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
                     >
                       <ExternalLink className="h-3.5 w-3.5" /> {g.preorderID ? 'Открыть в WB → выбрать дату' : 'Открыть в WB → склад и дату'}
                     </a>
+                    {g.availableDates && g.availableDates.length > 0 ? (
+                      <div className="mt-1.5 text-[10.5px] text-violet-700 dark:text-violet-300">
+                        <span className="font-bold">📅 Даты приёмки:</span>{' '}
+                        {g.availableDates.slice(0, 7).map((d, di) => {
+                          const lbl = new Date(d.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+                          return (
+                            <span key={di} className={d.coefficient === 0 ? 'font-bold text-emerald-700 dark:text-emerald-300' : ''}>
+                              {di > 0 ? ', ' : ''}{lbl}{d.coefficient === 0 ? ' (беспл.)' : ` (×${d.coefficient})`}
+                            </span>
+                          );
+                        })}
+                        {g.availableDates.length > 7 ? ' …' : ''}
+                      </div>
+                    ) : null}
                     {g.rejected.length > 0 ? (
                       <div className="mt-2 rounded-md border border-amber-300/70 bg-amber-50 px-2.5 py-1.5 text-[10.5px] text-amber-800 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-200">
                         <span className="font-bold">WB не принял {g.rejected.length}:</span>{' '}

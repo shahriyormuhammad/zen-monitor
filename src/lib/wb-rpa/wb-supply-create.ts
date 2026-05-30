@@ -76,6 +76,7 @@ export type CreateWbSupplyResult = {
   warehouseId: number | null;
   /** URL the user opens to finish (pick date + slot + confirm) in WB. */
   deepLink: string;
+  availableDates: AcceptanceDate[];
   warnings: string[];
 };
 
@@ -270,12 +271,16 @@ function aggregateItems(items: SupplyDraftItem[]): SupplyDraftItem[] {
 
 type Rpc = <R = unknown>(pathSuffix: string, params: unknown, id?: string) => Promise<R>;
 
+export type AcceptanceDate = { date: string; coefficient: number; cost: number };
+
 type OneSupplyCore = {
   draftID: string;
   preorderID: number | null;
   goodsBarcodes: number;
   goodsUnits: number;
   rejected: { barcode: string; reason: string }[];
+  /** Available acceptance dates parsed from WB (coefficient 0 = бесплатно). */
+  availableDates: AcceptanceDate[];
   warnings: string[];
 };
 
@@ -317,6 +322,7 @@ async function createOneSupply(
   }
 
   let preorderID: number | null = null;
+  let availableDates: AcceptanceDate[] = [];
   if (warehouseId && landedBarcodes.size === 0) {
     warnings.push('WB не принял ни одного штрихкода — поставку не создать (оставлен пустой черновик). Проверьте синхронизацию размеров.');
   } else if (warehouseId) {
@@ -351,9 +357,26 @@ async function createOneSupply(
       logger.warn({ warehouseId, draftID, err: raw.slice(0, 200) }, '[wb-supply-create] supply/create failed — left as draft');
       warnings.push(`Склад не принял поставку: ${friendly}. Оставлен черновик с товарами — открой в WB и выбери склад/дату вручную.`);
     }
+
+    // Parse available acceptance dates (read-only) so the user can pick the
+    // cheapest/free date before booking. Non-fatal.
+    if (preorderID) {
+      try {
+        const now = new Date();
+        const costs = await rpc<{ costs: { date: string; cost: number; coefficient: number }[] }>(
+          '/ns/sm-supply/supply-manager/api/v1/supply/getAcceptanceCosts',
+          { dateFrom: now.toISOString(), dateTo: new Date(now.getTime() + 30 * 86_400_000).toISOString(), preorderID },
+          `zen-costs${idTag}`,
+        );
+        availableDates = (costs.costs ?? [])
+          .filter((c) => c.coefficient >= 0)
+          .slice(0, 31)
+          .map((c) => ({ date: c.date, coefficient: c.coefficient, cost: c.cost }));
+      } catch { /* dates are a nice-to-have */ }
+    }
   }
 
-  return { draftID, preorderID, goodsBarcodes: landedBarcodes.size, goodsUnits, rejected, warnings };
+  return { draftID, preorderID, goodsBarcodes: landedBarcodes.size, goodsUnits, rejected, availableDates, warnings };
 }
 
 function deepLinkFor(core: OneSupplyCore): string {
@@ -404,6 +427,7 @@ export type SupplyGroupResult = {
   goodsUnits: number;
   rejected: { barcode: string; reason: string }[];
   deepLink: string;
+  availableDates: AcceptanceDate[];
   warnings: string[];
 };
 
@@ -476,6 +500,7 @@ export async function createWbSupplyBatch(
           goodsUnits: 0,
           rejected: [],
           deepLink: SUPPLIES_PAGE,
+          availableDates: [],
           warnings: [...warnings, `Ошибка: ${(e as Error).message.replace(/^WB[^:]*:\s*/, '')}`],
         });
       }
