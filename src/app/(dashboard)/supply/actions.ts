@@ -36,6 +36,10 @@ import {
   type ShkAoaResult,
   type SupplyAoaResult,
 } from '@/server/supply-builder/export';
+import {
+  createWbSupply,
+  type CreateWbSupplyResult,
+} from '@/lib/wb-rpa/wb-supply-create';
 
 export async function listSupplyArticlesAction(tenantId: string) {
   await requireTenantFeatureAccess(tenantId, 'supply');
@@ -248,4 +252,29 @@ function dateStamp(): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+}
+
+/* ── WB automation: создать черновик поставки прямо в кабинете ──────────────
+ *
+ * Автозаполняет товары (баркоды + количества) в новый WB-черновик через
+ * сохранённую WB ЛК сессию. НЕ бронирует дату поставки — это финансовый шаг
+ * с капчей, который остаётся за пользователем (отдаём deep link). См.
+ * src/lib/wb-rpa/wb-supply-create.ts.
+ */
+export async function createWbSupplyDraftAction(
+  tenantId: string,
+): Promise<CreateWbSupplyResult> {
+  await requireTenantFeatureAccess(tenantId, 'supply', ['owner', 'admin', 'manager']);
+  const items = await listSupplyItems(tenantId);
+  if (items.length === 0) throw new Error('Список поставки пуст');
+  const summary = buildSupplyAoa(items);
+  if (summary.barcodesCount === 0) {
+    throw new Error('Ни одного штрихкода — сначала подтяни размеры из WB в Настройках → Ростовки');
+  }
+  // summary.aoa = [['Баркод','Количество'], [barcode, qty], …]
+  const supplyItems = summary.aoa.slice(1).map((row) => ({
+    barcode: String(row[0] ?? ''),
+    quantity: Number(row[1] ?? 0),
+  }));
+  return createWbSupply(tenantId, { items: supplyItems });
 }

@@ -12,13 +12,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  FileSpreadsheet, Loader2, Plus, Star, Trash2, X,
+  AlertTriangle, CheckCircle2, ExternalLink, FileSpreadsheet, Loader2, Plus, Send, Star, Trash2, X,
 } from 'lucide-react';
 
 import {
   addSupplyItemAction, clearSupplyItemsAction, listProfilesForArticleAction,
   listSupplyArticlesAction, listSupplyItemsAction, removeSupplyItemAction,
-  buildSupplyXlsxAction,
+  buildSupplyXlsxAction, createWbSupplyDraftAction,
 } from '@/app/(dashboard)/supply/actions';
 import type { ProfileForDropdown, SupplyItem } from '@/server/supply-builder/service';
 import { ArticleAutocomplete } from './ArticleAutocomplete';
@@ -153,6 +153,15 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
     onError: (e) => setExportMessage({ tone: 'err', text: e instanceof Error ? e.message : String(e) }),
   });
 
+  const [wbResult, setWbResult] = useState<Awaited<ReturnType<typeof createWbSupplyDraftAction>> | null>(null);
+  const [wbError, setWbError] = useState<string | null>(null);
+  const createWbMutation = useMutation({
+    mutationFn: () => createWbSupplyDraftAction(tenantId),
+    onMutate: () => { setWbError(null); setWbResult(null); },
+    onSuccess: (res) => setWbResult(res),
+    onError: (e) => setWbError(e instanceof Error ? e.message : String(e)),
+  });
+
   const totalBoxes = items.reduce((s, i) => s + i.boxes, 0);
   const totalPieces = items.reduce((s, i) => s + i.totalPieces, 0);
   const hasMissingBc = items.some((i) => i.missingBc > 0);
@@ -276,6 +285,21 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                onClick={() => {
+                  if (window.confirm(
+                    `Создать черновик поставки прямо в кабинете WB?\n\nЗаполню товары (${fmtNum(totalPieces)} шт) в новый черновик. ` +
+                    `Дату поставки и склад выберешь сам в WB — это финансовый шаг, его не автоматизирую.`,
+                  )) createWbMutation.mutate();
+                }}
+                disabled={createWbMutation.isPending || hasMissingBc}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-violet-300 bg-violet-50 px-3 py-2 text-[11px] font-bold text-violet-800 hover:bg-violet-100 disabled:opacity-40 dark:border-violet-700/40 dark:bg-violet-950/30 dark:text-violet-200"
+                title="Автозаполнить товары в новый черновик поставки в кабинете WB"
+              >
+                {createWbMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                Создать в WB
+              </button>
+              <button
+                type="button"
                 onClick={() => exportMutation.mutate()}
                 disabled={exportMutation.isPending || hasMissingBc}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-[11px] font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-40 dark:border-emerald-700/40 dark:bg-emerald-950/30 dark:text-emerald-200"
@@ -297,6 +321,50 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
             <div className={`border-b border-border px-5 py-2 text-[12px] ${
               exportMessage.tone === 'ok' ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300'
             }`}>{exportMessage.text}</div>
+          ) : null}
+
+          {wbError ? (
+            <div className="flex items-start gap-2 border-b border-border bg-rose-50 px-5 py-2.5 text-[12px] text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> <span>{wbError}</span>
+            </div>
+          ) : null}
+
+          {wbResult ? (
+            <div className="border-b border-border bg-violet-50 px-5 py-3 dark:bg-violet-950/30">
+              <div className="flex items-center gap-2 text-[12.5px] font-bold text-violet-900 dark:text-violet-200">
+                <CheckCircle2 className="h-4 w-4 text-violet-600" />
+                Черновик создан в WB · {wbResult.goodsBarcodes} баркод{plural(wbResult.goodsBarcodes, '', 'а', 'ов')} · {fmtNum(wbResult.goodsUnits)} шт
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <a
+                  href={wbResult.deepLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-violet-700"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Открыть в WB → выбрать склад и дату
+                </a>
+                <span className="text-[11px] text-violet-700 dark:text-violet-300">
+                  Дату и склад выбери в кабинете — финансовый шаг с капчей мы не трогаем.
+                </span>
+              </div>
+              {wbResult.rejected.length > 0 ? (
+                <div className="mt-2.5 rounded-lg border border-amber-300/70 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:border-amber-700/40 dark:bg-amber-950/30 dark:text-amber-200">
+                  <div className="font-bold">WB не принял {wbResult.rejected.length} баркод{plural(wbResult.rejected.length, '', 'а', 'ов')}:</div>
+                  <ul className="mt-1 space-y-0.5">
+                    {wbResult.rejected.slice(0, 8).map((r) => (
+                      <li key={r.barcode} className="font-mono">{r.barcode} — {r.reason}</li>
+                    ))}
+                    {wbResult.rejected.length > 8 ? <li>…ещё {wbResult.rejected.length - 8}</li> : null}
+                  </ul>
+                </div>
+              ) : null}
+              {wbResult.warnings.length > 0 ? (
+                <ul className="mt-2 space-y-0.5 text-[11px] text-violet-700 dark:text-violet-300">
+                  {wbResult.warnings.map((w, i) => <li key={i}>• {w}</li>)}
+                </ul>
+              ) : null}
+            </div>
           ) : null}
 
           <div className="divide-y divide-border">
