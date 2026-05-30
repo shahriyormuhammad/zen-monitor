@@ -386,8 +386,10 @@ async function createOneSupply(
 }
 
 function deepLinkFor(core: OneSupplyCore): string {
+  // Preorder → straight to the date-selection step («Когда планируется
+  // доставка») for that exact поставка. Draft → its goods step.
   return core.preorderID
-    ? SUPPLIES_PAGE
+    ? `https://seller.wildberries.ru/supplies-management/new-supply/choose-date?supplyID=${core.preorderID}`
     : `https://seller.wildberries.ru/supplies-management/new-supply/goods?draftID=${core.draftID}`;
 }
 
