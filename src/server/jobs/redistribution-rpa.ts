@@ -855,6 +855,11 @@ async function runRedistributionUploadRpa(input: {
 
   const browser = await chromium.launch({
     headless: WB_RPA_HEADLESS,
+    // Системный Google Chrome через WB_RPA_CHROMIUM_PATH — Playwright не
+    // поставляет Chromium под Ubuntu 26.04.
+    ...(process.env.WB_RPA_CHROMIUM_PATH
+      ? { executablePath: process.env.WB_RPA_CHROMIUM_PATH }
+      : {}),
   });
 
   try {
@@ -1117,6 +1122,11 @@ export async function runRedistributionRouteProbeRpa(input: {
 
   const browser = await chromium.launch({
     headless: WB_RPA_HEADLESS,
+    // Системный Google Chrome через WB_RPA_CHROMIUM_PATH — Playwright не
+    // поставляет Chromium под Ubuntu 26.04.
+    ...(process.env.WB_RPA_CHROMIUM_PATH
+      ? { executablePath: process.env.WB_RPA_CHROMIUM_PATH }
+      : {}),
   });
 
   try {

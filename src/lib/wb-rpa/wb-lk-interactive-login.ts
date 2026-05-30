@@ -319,6 +319,13 @@ export async function runInteractiveWbLkLogin(params: RunInteractiveLoginParams)
     try {
       browser = await chromium.launch({
         headless,
+        // На Ubuntu 26.04 Playwright не качает свой Chromium (нет сборки под
+        // эту версию ОС), поэтому используем системный Google Chrome через
+        // WB_RPA_CHROMIUM_PATH (напр. /usr/bin/google-chrome). Если не задан —
+        // обычный путь Playwright.
+        ...(process.env.WB_RPA_CHROMIUM_PATH
+          ? { executablePath: process.env.WB_RPA_CHROMIUM_PATH }
+          : {}),
         // --no-sandbox: для запуска от root в production-контейнере.
         // --disable-dev-shm-usage: избегает падений из-за маленького /dev/shm.
         // --disable-blink-features=AutomationControlled: убирает navigator.webdriver
