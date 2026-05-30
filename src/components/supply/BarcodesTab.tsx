@@ -12,10 +12,11 @@
 
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { CheckCircle2, Download, Loader2, QrCode } from 'lucide-react';
+import { CheckCircle2, Download, Loader2, QrCode, Send } from 'lucide-react';
 
 import {
   buildShkXlsxAction, listSupplyItemsAction,
+  listPlannedSuppliesAction, fillWbBoxBarcodesAction,
 } from '@/app/(dashboard)/supply/actions';
 
 function fmtNum(n: number): string { return Math.round(n).toLocaleString('ru-RU'); }
@@ -31,6 +32,19 @@ export function BarcodesTab({ tenantId }: { tenantId: string }) {
 
   const totalBoxes = useMemo(() => items.reduce((s, i) => s + i.boxes, 0), [items]);
   const hasMissingBc = useMemo(() => items.some((i) => i.missingBc > 0), [items]);
+
+  // Заполнить ШК прямо в WB (после брони даты).
+  const [selectedSupplyId, setSelectedSupplyId] = useState<number | null>(null);
+  const [suppliesEnabled, setSuppliesEnabled] = useState(false);
+  const suppliesQuery = useQuery({
+    queryKey: ['planned-supplies', tenantId],
+    queryFn: () => listPlannedSuppliesAction(tenantId),
+    enabled: Boolean(tenantId) && suppliesEnabled,
+    staleTime: 60_000,
+  });
+  const fillMutation = useMutation({
+    mutationFn: () => fillWbBoxBarcodesAction(tenantId, selectedSupplyId!),
+  });
 
   const [firstShk, setFirstShk] = useState('');
   const [boxCount, setBoxCount] = useState<string>('');
@@ -83,12 +97,65 @@ export function BarcodesTab({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="space-y-4">
+      {/* ─ Заполнить ШК прямо в WB (после брони даты) ─ */}
+      <div className="dashboard-card border-violet-200 p-5 dark:border-violet-800/40">
+        <h3 className="text-[15px] font-extrabold">Заполнить ШК коробов в WB</h3>
+        <p className="mt-0.5 max-w-2xl text-[12px] text-muted-foreground">
+          Для уже <strong>забронированной</strong> поставки сам создам ШК коробов и привяжу содержимое (по текущему списку поставки: {fmtNum(totalBoxes)} коробов) — прямо в кабинете. Дату брони выбираешь в WB сам.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <label className="block">
+            <span className="mb-1 block text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">Запланированная поставка</span>
+            <select
+              value={selectedSupplyId ?? ''}
+              onMouseDown={() => { if (!suppliesEnabled) setSuppliesEnabled(true); }}
+              onChange={(e) => setSelectedSupplyId(e.target.value ? Number(e.target.value) : null)}
+              className="h-9 w-full rounded-lg border border-border bg-card px-2 text-[12px] outline-none focus:border-violet-400"
+            >
+              <option value="">{suppliesEnabled && suppliesQuery.isFetching ? 'загрузка поставок…' : '— выбери поставку —'}</option>
+              {(suppliesQuery.data ?? []).map((s) => (
+                <option key={s.supplyId} value={s.supplyId}>
+                  №{s.supplyId} · {s.warehouseName} · {s.supplyDate ? new Date(s.supplyDate).toLocaleDateString('ru-RU') : 'без даты'} · {s.detailsQuantity} шт
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() => { if (selectedSupplyId && window.confirm('Создать и привязать ШК коробов в WB для этой поставки?')) fillMutation.mutate(); }}
+            disabled={fillMutation.isPending || !selectedSupplyId || hasMissingBc}
+            className="inline-flex h-9 items-center gap-1.5 self-end rounded-lg border border-violet-300 bg-violet-50 px-3 text-[12px] font-bold text-violet-800 hover:bg-violet-100 disabled:opacity-40 dark:border-violet-700/40 dark:bg-violet-950/30 dark:text-violet-200"
+          >
+            {fillMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+            Заполнить ШК в WB
+          </button>
+        </div>
+        {suppliesEnabled && !suppliesQuery.isFetching && (suppliesQuery.data ?? []).length === 0 ? (
+          <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">Нет запланированных поставок без ШК. Сначала создай поставку («Шаг 1») и забронируй дату в WB.</p>
+        ) : null}
+        {fillMutation.error ? (
+          <div className="mt-3 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-[12px] text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+            {fillMutation.error instanceof Error ? fillMutation.error.message : String(fillMutation.error)}
+          </div>
+        ) : null}
+        {fillMutation.data ? (
+          <div className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-800 dark:border-emerald-700/40 dark:bg-emerald-950/30 dark:text-emerald-200">
+            ✓ Коробов создано: <strong>{fillMutation.data.boxesCreated}</strong>, привязано: <strong>{fillMutation.data.boxesBound}</strong>{fillMutation.data.skippedBoxes > 0 ? `, пропущено: ${fillMutation.data.skippedBoxes}` : ''}. Проверь в кабинете → «Упаковка».
+            {fillMutation.data.warnings.length > 0 ? (
+              <ul className="mt-1 space-y-0.5 text-[11px] text-amber-700 dark:text-amber-300">
+                {fillMutation.data.warnings.slice(0, 6).map((w, i) => <li key={i}>• {w}</li>)}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
       <div className="dashboard-card p-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h3 className="text-[15px] font-extrabold">ШК коробов</h3>
+            <h3 className="text-[15px] font-extrabold">ШК коробов — Excel (запасной способ)</h3>
             <p className="mt-0.5 max-w-xl text-[12px] text-muted-foreground">
-              Скопируй первый ШК короба из кабинета WB (раздел «Поставки → твоя поставка → список коробов»). Система сгенерирует последовательные ШК и привяжет содержимое каждой коробки.
+              Или скопируй первый ШК короба из кабинета WB и скачай XLSX с последовательными ШК и содержимым каждой коробки.
             </p>
           </div>
         </div>

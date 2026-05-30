@@ -257,6 +257,107 @@ export async function listWbWarehousesCached(tenantId: string): Promise<WbWareho
   return items;
 }
 
+/* ── ШК коробов (box barcodes) — only after a supply is booked (has supplyId) ── */
+
+export type PlannedSupply = {
+  supplyId: number;
+  warehouseName: string;
+  supplyDate: string | null;
+  detailsQuantity: number;
+  statusName: string;
+};
+
+/** Booked supplies that still need box barcodes (ШК) filled. */
+export async function listPlannedSupplies(tenantId: string): Promise<PlannedSupply[]> {
+  return withSupplyApi(tenantId, async ({ rpc }) => {
+    const res = await rpc<{ data: { supplyId: number; warehouseName: string; supplyDate: string | null; detailsQuantity: number; statusId: number; statusName: string; hasBoxBarcodes: boolean }[] }>(
+      '/ns/sm-supply/supply-manager/api/v1/supply/listSupplies',
+      { pageNumber: 1, pageSize: 50, sortBy: 'supplyDate', sortDirection: 'desc', statusId: -2 },
+      'zen-list-supplies',
+    );
+    return (res.data ?? [])
+      .filter((s) => s.supplyId && !s.hasBoxBarcodes && (s.statusId === 1 || s.statusId === 3))
+      .map((s) => ({
+        supplyId: s.supplyId,
+        warehouseName: s.warehouseName,
+        supplyDate: s.supplyDate,
+        detailsQuantity: s.detailsQuantity,
+        statusName: s.statusName,
+      }));
+  });
+}
+
+export type BoxComposition = { barcode: string; quantity: number }[];
+export type FillBoxResult = {
+  supplyId: number;
+  boxesCreated: number;
+  boxesBound: number;
+  skippedBoxes: number;
+  warnings: string[];
+};
+
+/**
+ * Generate WB box barcodes for a booked supply and bind each box's contents.
+ * `boxes` is the per-box composition (each box = list of {barcode, quantity}).
+ * Barcodes not present in the supply are dropped (with a warning).
+ */
+export async function fillWbBoxBarcodes(
+  tenantId: string,
+  supplyId: number,
+  boxes: BoxComposition[],
+): Promise<FillBoxResult> {
+  return withSupplyApi(tenantId, async ({ rpc }) => {
+    const warnings: string[] = [];
+
+    // Validate against the supply's actual goods.
+    const det = await rpc<{ data: { barcode: string; quantity: number }[] }>(
+      '/ns/sm-supply/supply-manager/api/v1/supply/supplyDetails',
+      { pageNumber: 1, pageSize: 1000, preorderID: null, search: '', supplyID: supplyId },
+      'zen-supply-det',
+    );
+    const valid = new Set((det.data ?? []).map((g) => g.barcode));
+    if (valid.size === 0) {
+      throw new WbSupplyError('У поставки нет товаров или она ещё не запланирована — сначала забронируй дату в WB.');
+    }
+
+    const usable = boxes
+      .map((box) => box.filter((b) => valid.has(b.barcode) && b.quantity > 0))
+      .filter((box) => box.length > 0);
+    const skippedBoxes = boxes.length - usable.length;
+    if (usable.length === 0) {
+      throw new WbSupplyError('Баркоды списка не совпадают с товарами этой поставки — нечего привязывать.');
+    }
+
+    const created = await rpc<{ barcodes: string[] }>(
+      '/ns/sm-box/supply-manager/api/v1/box/createBoxBarcodes',
+      { supplyId, barcodeNumber: usable.length },
+      'zen-box-create',
+    );
+    const codes = created.barcodes ?? [];
+    if (codes.length === 0) throw new WbSupplyError('WB не выдал ШК коробов.');
+
+    let bound = 0;
+    for (let i = 0; i < usable.length && i < codes.length; i++) {
+      try {
+        await rpc('/ns/sm-box/supply-manager/api/v1/box/bindBarcodes', {
+          incomeID: supplyId,
+          bind: [{
+            boxcode: codes[i],
+            barcodes: usable[i]!.map((b) => ({ barcode: b.barcode, expirationDate: null, quantity: b.quantity })),
+            quantity: 1,
+          }],
+        }, `zen-box-bind-${i}`);
+        bound++;
+      } catch (e) {
+        warnings.push(`Короб ${codes[i]}: ${(e as Error).message.replace(/^WB[^:]*:\s*/, '').slice(0, 80)}`);
+      }
+    }
+    if (skippedBoxes > 0) warnings.push(`${skippedBoxes} короб(ов) пропущено — их баркоды не в этой поставке.`);
+    logger.info({ tenantId, supplyId, boxesCreated: codes.length, boxesBound: bound }, '[wb-supply-create] box barcodes filled');
+    return { supplyId, boxesCreated: codes.length, boxesBound: bound, skippedBoxes, warnings };
+  });
+}
+
 /** De-dupe + aggregate barcodes; drop empty/zero rows. */
 function aggregateItems(items: SupplyDraftItem[]): SupplyDraftItem[] {
   const byBarcode = new Map<string, number>();

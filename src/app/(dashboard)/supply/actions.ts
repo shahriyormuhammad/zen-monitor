@@ -39,8 +39,12 @@ import {
 import {
   createWbSupplyBatch,
   listWbWarehousesCached,
+  listPlannedSupplies,
+  fillWbBoxBarcodes,
   type SupplyGroupInput,
   type SupplyGroupResult,
+  type PlannedSupply,
+  type FillBoxResult,
 } from '@/lib/wb-rpa/wb-supply-create';
 import { warehouseToOkrug } from '@/server/supply/geography';
 
@@ -324,4 +328,40 @@ export async function listWbWarehousesAction(
     .filter((w) => !/(питание|горюч|шины)/i.test(w.warehouseName))
     .map((w) => ({ warehouseId: w.warehouseId, warehouseName: w.warehouseName, okrug: warehouseToOkrug(w.warehouseName) }))
     .sort((a, b) => a.warehouseName.localeCompare(b.warehouseName, 'ru'));
+}
+
+/* ── ШК коробов в кабинете (после брони даты) ──────────────────────────────── */
+
+/** Booked WB supplies that still need box barcodes (для пикера). */
+export async function listPlannedSuppliesAction(tenantId: string): Promise<PlannedSupply[]> {
+  await requireTenantFeatureAccess(tenantId, 'supply');
+  return listPlannedSupplies(tenantId);
+}
+
+/**
+ * Generate + bind box barcodes (ШК коробов) in WB for a booked supply, using
+ * the current «Список поставки» box layout (item.boxes коробов × ростовка).
+ */
+export async function fillWbBoxBarcodesAction(
+  tenantId: string,
+  supplyId: number,
+): Promise<FillBoxResult> {
+  await requireTenantFeatureAccess(tenantId, 'supply', ['owner', 'admin', 'manager']);
+  if (!supplyId || supplyId <= 0) throw new Error('Не выбрана поставка.');
+  const items = await listSupplyItems(tenantId);
+  if (items.length === 0) throw new Error('Список поставки пуст — нечего паковать.');
+
+  // One box per item.boxes, each box = the article's per-box ростовка.
+  const boxes: { barcode: string; quantity: number }[][] = [];
+  for (const item of items) {
+    const comp = item.rows
+      .filter((r) => r.perBox > 0 && r.barcode)
+      .map((r) => ({ barcode: r.barcode, quantity: r.perBox }));
+    if (comp.length === 0) continue;
+    for (let b = 0; b < item.boxes; b++) boxes.push(comp);
+  }
+  if (boxes.length === 0) {
+    throw new Error('Нет коробов со штрихкодами — проверь ростовки (Настройки → Ростовки).');
+  }
+  return fillWbBoxBarcodes(tenantId, supplyId, boxes);
 }
