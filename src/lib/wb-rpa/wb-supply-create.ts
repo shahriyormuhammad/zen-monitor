@@ -322,13 +322,19 @@ export async function fillWbBoxBarcodes(
   return withSupplyApi(tenantId, async ({ rpc }) => {
     const warnings: string[] = [];
 
-    // Validate against the supply's actual goods.
-    const det = await rpc<{ data: { barcode: string; quantity: number }[] }>(
-      '/ns/sm-supply/supply-manager/api/v1/supply/supplyDetails',
-      { pageNumber: 1, pageSize: 1000, preorderID: null, search: '', supplyID: supplyId },
-      'zen-supply-det',
-    );
-    const valid = new Set((det.data ?? []).map((g) => g.barcode));
+    // Validate against the supply's actual goods. WB caps supplyDetails
+    // pageSize at 100 → paginate.
+    const valid = new Set<string>();
+    for (let pageNumber = 1; pageNumber <= 20; pageNumber++) {
+      const det = await rpc<{ data: { barcode: string; quantity: number }[] }>(
+        '/ns/sm-supply/supply-manager/api/v1/supply/supplyDetails',
+        { pageNumber, pageSize: 100, preorderID: null, search: '', supplyID: supplyId },
+        `zen-supply-det-${pageNumber}`,
+      );
+      const rows = det.data ?? [];
+      for (const g of rows) valid.add(g.barcode);
+      if (rows.length < 100) break;
+    }
     if (valid.size === 0) {
       throw new WbSupplyError('У поставки нет товаров или она ещё не запланирована — сначала забронируй дату в WB.');
     }
