@@ -25,9 +25,9 @@ type Step = 'delivery-plan' | 'step-1' | 'invoice' | 'barcodes';
 
 const TABS: { key: Step; label: string; sub: string; icon: typeof ClipboardList }[] = [
   { key: 'delivery-plan', label: 'План поставки',  sub: 'Распределение по округам',  icon: MapPin },
-  { key: 'step-1',        label: 'Шаг 1: Создать', sub: 'Артикул + ростовка + XLSX', icon: ClipboardList },
-  { key: 'invoice',       label: 'Шаг 2: Накладная', sub: 'Артикул × коробок',         icon: FileText },
-  { key: 'barcodes',      label: 'Шаг 3: ШК коробов', sub: 'Генерация + XLSX',         icon: QrCode },
+  { key: 'invoice',       label: 'Шаг 1: Накладная', sub: 'Артикул × коробок',        icon: FileText },
+  { key: 'step-1',        label: 'Шаг 2: Создать', sub: 'Артикул + ростовка',        icon: ClipboardList },
+  { key: 'barcodes',      label: 'Шаг 3: ШК коробов', sub: 'Генерация + WB',          icon: QrCode },
 ];
 
 export function SupplyPageClient({ tenantId }: { tenantId: string }) {
