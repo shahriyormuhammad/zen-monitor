@@ -1263,6 +1263,18 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
         />
       </div>
 
+      {/* V2: типы маршрутов (как в MetricPulse) */}
+      {summary.recommendationCount > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 text-[12px]">
+          <span className="rounded-full bg-rose-100 px-2.5 py-1 font-bold text-rose-800 dark:bg-rose-950/50 dark:text-rose-300">🎯 Снятие дефицита: {summary.deficitCount}</span>
+          <span className="rounded-full bg-sky-100 px-2.5 py-1 font-bold text-sky-800 dark:bg-sky-950/50 dark:text-sky-300">📍 Рост покрытия: {summary.coverageCount}</span>
+          <span className="rounded-full bg-amber-100 px-2.5 py-1 font-bold text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">📦 Разгрузка мёртвого стока: {summary.deadstockCount}</span>
+          {summary.grossRevenueRub > 0 ? (
+            <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-bold text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">Потенциальная выручка маршрутов: {formatNumber(summary.grossRevenueRub, 0)} ₽</span>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* ИЛ / ИРП индексы + сплит экономии + горизонт WB-пересчёта */}
       {displaySavingsRub > 0 ? (
         <div className="rounded-2xl border border-border bg-card px-5 py-4">
