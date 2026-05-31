@@ -18,9 +18,11 @@ const MIN_LOCAL_SHARE_DELTA_PCT = 0.03;
 
 // ── V2: типы маршрутов сверх «снятия дефицита» ──────────────────────────────
 // Рост покрытия: развозим излишки на важные склады кабинета, где товара нет.
-const COVERAGE_TOP_WAREHOUSES = 18;       // сколько топ-складов кабинета держим «покрытыми»
+const COVERAGE_TOP_WAREHOUSES = 14;       // сколько топ-складов кабинета держим «покрытыми»
 const COVERAGE_SEED_UNITS = 3;            // сколько «подсеваем» на пустой важный склад
 const COVERAGE_MIN_WAREHOUSE_ORDERS = 5;  // склад считается важным от стольких заказов кабинета
+const COVERAGE_MAX_PER_SKU = 1;           // не больше N маршрутов покрытия на один SKU+размер
+const COVERAGE_MIN_SKU_ORDERS = 8;        // покрытие только для реально продающихся SKU (за период)
 // Разгрузка мёртвого стока: остаток, который почти не продаётся локально.
 const DEADSTOCK_MIN_COVERAGE_DAYS = 60;   // дней запаса, выше которых сток «мёртвый»
 const DEADSTOCK_MIN_UNITS = 2;
@@ -695,8 +697,14 @@ export async function getRedistributionPlan(
     }
 
     // ── Фаза 2: рост покрытия — «подсеваем» остаток на важные склады
-    //    кабинета, где этого SKU+размера нет вообще (нет ячейки в матрице). ──
+    //    кабинета, где этого SKU+размера нет вообще (нет ячейки в матрице).
+    //    Только для реально продающихся SKU и не больше COVERAGE_MAX_PER_SKU
+    //    маршрутов на размер (топ-склад по обороту), иначе тонем в шуме. ──
+    let coverageSeeded = 0;
     for (const target of importantWarehouses) {
+      if (totalOrders < COVERAGE_MIN_SKU_ORDERS || coverageSeeded >= COVERAGE_MAX_PER_SKU) {
+        break;
+      }
       if (matrix.cells.has(target.officeKey)) {
         continue; // товар уже есть на этом складе
       }
@@ -731,6 +739,7 @@ export async function getRedistributionPlan(
         fromCoverageDaysBefore: coverageDays(donor.stockCount, donor.dailyDemand),
         toCoverageDaysBefore: 0,
       });
+      coverageSeeded += 1;
     }
 
     // ── Фаза 3: разгрузка мёртвого стока — донор с огромным запасом дней
