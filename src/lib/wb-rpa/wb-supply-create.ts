@@ -355,21 +355,34 @@ export async function fillWbBoxBarcodes(
     const codes = created.barcodes ?? [];
     if (codes.length === 0) throw new WbSupplyError('WB не выдал ШК коробов.');
 
+    // WB needs a beat to register fresh box codes before they're bindable
+    // (otherwise bindBarcodes 504s). Then bind in chunks (one round-trip each,
+    // instead of one call per box) with retry on transient/504.
+    await sleep(2500);
     let bound = 0;
-    for (let i = 0; i < usable.length && i < codes.length; i++) {
-      try {
-        await rpc('/ns/sm-box/supply-manager/api/v1/box/bindBarcodes', {
-          incomeID: supplyId,
-          bind: [{
-            boxcode: codes[i],
-            barcodes: usable[i]!.map((b) => ({ barcode: b.barcode, expirationDate: null, quantity: b.quantity })),
-            quantity: 1,
-          }],
-        }, `zen-box-bind-${i}`);
-        bound++;
-      } catch (e) {
-        warnings.push(`Короб ${codes[i]}: ${(e as Error).message.replace(/^WB[^:]*:\s*/, '').slice(0, 80)}`);
+    const CHUNK = 10;
+    for (let i = 0; i < usable.length && i < codes.length; i += CHUNK) {
+      const slice = usable.slice(i, i + CHUNK);
+      const bind = slice.map((box, j) => ({
+        boxcode: codes[i + j]!,
+        barcodes: box.map((b) => ({ barcode: b.barcode, expirationDate: null, quantity: b.quantity })),
+        quantity: 1,
+      }));
+      let ok = false;
+      for (let a = 0; a < 3 && !ok; a++) {
+        try {
+          await rpc('/ns/sm-box/supply-manager/api/v1/box/bindBarcodes',
+            { incomeID: supplyId, bind }, `zen-box-bind-${i}-${a}`);
+          ok = true;
+          bound += slice.length;
+        } catch (e) {
+          const m = (e as Error).message;
+          if ((isTransientDraftError(e) || /\b504\b|gateway time-?out/i.test(m)) && a < 2) { await sleep(1800); continue; }
+          warnings.push(`Коробы ${i + 1}–${i + slice.length}: ${m.replace(/^WB[^:]*:\s*/, '').slice(0, 70)}`);
+          break;
+        }
       }
+      await sleep(200);
     }
     if (skippedBoxes > 0) warnings.push(`${skippedBoxes} короб(ов) пропущено — их баркоды не в этой поставке.`);
     logger.info({ tenantId, supplyId, boxesCreated: codes.length, boxesBound: bound }, '[wb-supply-create] box barcodes filled');
