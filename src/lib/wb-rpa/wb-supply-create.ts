@@ -114,6 +114,7 @@ async function withSupplyApi<T>(
   tenantId: string,
   fn: (ctx: {
     rpc: <R = unknown>(pathSuffix: string, params: unknown, id?: string) => Promise<R>;
+    rpcArray: <R = unknown>(pathSuffix: string, method: string, params: unknown, id?: string) => Promise<R>;
     page: Page;
   }) => Promise<T>,
 ): Promise<T> {
@@ -224,7 +225,41 @@ async function withSupplyApi<T>(
       return json.result as R;
     };
 
-    const result = await fn({ rpc, page });
+    // Some box endpoints (ListBarcodesBoxes) use the JSON-RPC batch/array form
+    // with an explicit `method`. Returns the first element's result.
+    const rpcArray = async <R = unknown>(pathSuffix: string, method: string, params: unknown, id = 'zen'): Promise<R> => {
+      const auth = latestAuth!;
+      const out = await page.evaluate(
+        async ({ url, body, auth }) => {
+          try {
+            const res = await fetch(url, {
+              method: 'POST',
+              credentials: 'include',
+              headers: {
+                'content-type': 'application/json',
+                authorizev3: auth.authorizev3,
+                'wb-seller-lk': auth.wbSellerLk,
+                'root-version': auth.rootVersion,
+              },
+              body,
+            });
+            return { ok: true as const, status: res.status, text: await res.text() };
+          } catch (e) {
+            return { ok: false as const, status: 0, text: String(e) };
+          }
+        },
+        { url: SUPPLY_BASE + pathSuffix, body: JSON.stringify([{ method, params, id, jsonrpc: '2.0' }]), auth },
+      );
+      if (!out.ok || out.status < 200 || out.status >= 300) {
+        throw new WbSupplyError(`WB ${pathSuffix}: HTTP ${out.status} — ${out.text.slice(0, 160)}`);
+      }
+      const parsed = JSON.parse(out.text);
+      const first = Array.isArray(parsed) ? parsed[0] : parsed;
+      if (first?.error) throw new WbSupplyError(`WB ${pathSuffix}: ${JSON.stringify(first.error).slice(0, 200)}`);
+      return first?.result as R;
+    };
+
+    const result = await fn({ rpc, rpcArray, page });
 
     // Refresh the stored session cookies (best-effort).
     try {
@@ -319,7 +354,7 @@ export async function fillWbBoxBarcodes(
   supplyId: number,
   boxes: BoxComposition[],
 ): Promise<FillBoxResult> {
-  return withSupplyApi(tenantId, async ({ rpc }) => {
+  return withSupplyApi(tenantId, async ({ rpc, rpcArray }) => {
     const warnings: string[] = [];
 
     // Validate against the supply's actual goods. WB caps supplyDetails
@@ -346,6 +381,19 @@ export async function fillWbBoxBarcodes(
     if (usable.length === 0) {
       throw new WbSupplyError('Баркоды списка не совпадают с товарами этой поставки — нечего привязывать.');
     }
+
+    // Idempotent: clear any existing boxes first so re-runs don't accumulate
+    // empty/duplicate boxes.
+    try {
+      const lst = await rpcArray<{ boxes: { boxcode: string }[] }>(
+        '/ns/sm-box/supply-manager/api/v1/box', 'ListBarcodesBoxes', { incomeID: supplyId }, 'zen-box-list',
+      );
+      const existing = (lst?.boxes ?? []).map((b) => b.boxcode).filter(Boolean);
+      if (existing.length > 0) {
+        await rpc('/ns/sm-box/supply-manager/api/v1/box/deleteBoxBarcodes', { supplyId, barcodesToDelete: existing }, 'zen-box-clear');
+        await sleep(800);
+      }
+    } catch { /* non-fatal */ }
 
     const created = await rpc<{ barcodes: string[] }>(
       '/ns/sm-box/supply-manager/api/v1/box/createBoxBarcodes',
