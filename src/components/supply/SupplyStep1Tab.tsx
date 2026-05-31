@@ -68,10 +68,11 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
     return undefined;
   }, [articles, vc, nm]);
 
-  // Auto-link nm <→> vc
+  // Заполнить nmId при точном совпадении (но НЕ перезаписывать vendorCode —
+  // иначе ввод «снапается» и его нельзя стереть, баг п.1). Выбор из подсказки
+  // проставляет оба поля через onPick.
   useEffect(() => {
     if (matched && String(matched.nmId) !== nm) setNm(String(matched.nmId));
-    if (matched && matched.vendorCode !== vc) setVc(matched.vendorCode);
   }, [matched]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const profilesQuery = useQuery({
@@ -209,6 +210,7 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
             <ArticleAutocomplete
               value={vc}
               onChange={(v) => { setVc(v); setNm(''); }}
+              onPick={(a) => { setVc(a.vendorCode); setNm(String(a.nmId)); }}
               articles={articles}
               placeholder="напр. A519-2 ТН-10"
               className="h-9 w-full rounded-lg border border-border bg-card px-3 text-[12px] outline-none focus:border-rose-400"

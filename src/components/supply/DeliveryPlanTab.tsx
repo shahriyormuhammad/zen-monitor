@@ -80,21 +80,9 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
   const [strategy, setStrategy] = useState<SupplyStrategy>('cost');
   const [items, setItems] = useState<PlannedItem[]>([]);
 
-  /* Auto-link vendor code → nmId via the articles cache. */
-  useEffect(() => {
-    if (!vc.trim()) return;
-    const match = articles.find((a) => a.vendorCode.toLowerCase() === vc.trim().toLowerCase());
-    if (match && String(match.nmId) !== nm) {
-      setNm(String(match.nmId));
-    }
-  }, [vc, articles, nm]);
-  useEffect(() => {
-    if (!nm) return;
-    const match = articles.find((a) => String(a.nmId) === nm.trim());
-    if (match && match.vendorCode !== vc) {
-      setVc(match.vendorCode);
-    }
-  }, [nm, articles, vc]);
+  /* Связку vendorCode ↔ nmId делаем ТОЛЬКО при выборе из подсказки (onPick),
+   * а не реактивными эффектами — иначе ввод «снапается» назад и его нельзя
+   * стереть/изменить (баг п.1). */
 
   const recomputeDistribution = useCallback(
     async (item: PlannedItem, nextStrategy: SupplyStrategy) => {
@@ -264,7 +252,8 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
           <Field label="Артикул продавца">
             <ArticleAutocomplete
               value={vc}
-              onChange={setVc}
+              onChange={(v) => { setVc(v); setNm(''); }}
+              onPick={(a) => { setVc(a.vendorCode); setNm(String(a.nmId)); }}
               articles={articles}
               placeholder="напр. A519-2 ТН-10"
               className="h-9 w-full rounded-lg border border-border bg-card px-3 text-[12px] text-foreground outline-none focus:border-rose-400"

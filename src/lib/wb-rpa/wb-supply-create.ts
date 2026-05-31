@@ -604,11 +604,11 @@ async function createOneSupply(
 }
 
 function deepLinkFor(core: OneSupplyCore): string {
-  // Preorder → straight to the date-selection step («Когда планируется
-  // доставка») for that exact поставка. Draft → its goods step.
-  return core.preorderID
-    ? `https://seller.wildberries.ru/supplies-management/new-supply/choose-date?supplyID=${core.preorderID}`
-    : `https://seller.wildberries.ru/supplies-management/new-supply/goods?draftID=${core.draftID}`;
+  // Всегда ведём на шаг ТОВАРОВ конкретного черновика — оттуда визард WB
+  // надёжно проводит склад → дата → ШК. Прямой choose-date?supplyID на
+  // свежесозданный преордер часто даёт «Ошибка получения поставки» (визард
+  // штатно доходит до даты со state предыдущих шагов, а не «холодным» фетчем).
+  return `https://seller.wildberries.ru/supplies-management/new-supply/goods?draftID=${core.draftID}`;
 }
 
 /**
