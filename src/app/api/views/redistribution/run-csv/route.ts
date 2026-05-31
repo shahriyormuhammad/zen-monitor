@@ -98,6 +98,8 @@ export const GET = apiRoute(async (request: Request) => {
       brand: item.brand,
       sizeName: item.sizeName,
       chrtId: item.chrtId,
+      kind: "deficit",
+      revenuePotentialRub: 0,
       fromRegionName: item.fromRegionName,
       fromWarehouse: item.fromWarehouse,
       fromOfficeId: item.fromOfficeId,
