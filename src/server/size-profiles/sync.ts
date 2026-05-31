@@ -55,8 +55,12 @@ function extractCardSizes(card: WbProductCard): Array<{ techSize: string; barcod
   const out: Array<{ techSize: string; barcode: string; chrtId: number | null }> = [];
   for (const raw of card.sizes as WbCardSize[]) {
     if (!raw || typeof raw !== 'object') continue;
-    const techSize = asTrimmedString(raw.techSize) ?? asTrimmedString(raw.wbSize);
-    if (!techSize || techSize === '0') continue;
+    // Одноразмерные товары (расчёски, аксессуары, товары для дома и т.п.)
+    // приходят с techSize "0"/пусто. Раньше мы их пропускали → товар вообще
+    // не получал баркод и профиль ростовки. Теперь даём им метку «Единый»,
+    // чтобы любой товар (не только обувь/одежда) попадал в ростовки и поставку.
+    const techRaw = asTrimmedString(raw.techSize) ?? asTrimmedString(raw.wbSize);
+    const techSize = (!techRaw || techRaw === '0') ? 'Единый' : techRaw;
     const chrtId = asPositiveBigInt(raw.chrtID);
     const skus = Array.isArray(raw.skus) ? raw.skus : [];
     for (const sku of skus) {
