@@ -204,6 +204,24 @@ export async function listSupplyItems(tenantId: string): Promise<SupplyItem[]> {
   });
 }
 
+/** Inline-edit the box count of an existing supply row (recomputes totals). */
+export async function setSupplyItemBoxes(tenantId: string, id: string, boxes: number): Promise<SupplyItem> {
+  const b = Math.max(1, Math.floor(Number(boxes) || 1));
+  return withTenantContext(db, tenantId, async (tx) => {
+    const [row] = await tx.select().from(supplyItems)
+      .where(and(eq(supplyItems.tenantId, tenantId), eq(supplyItems.id, id))).limit(1);
+    if (!row) throw new Error('Строка поставки не найдена');
+    const srcRows = (Array.isArray(row.rows) ? row.rows : []) as SupplyItemRow[];
+    const rows = srcRows.map((r) => ({ ...r, boxes: b, total: Math.max(0, Math.floor(r.perBox)) * b }));
+    const totalPieces = row.sumPerBox * b;
+    const [updated] = await tx.update(supplyItems)
+      .set({ boxes: b, totalPieces, rows, updatedAt: new Date() })
+      .where(and(eq(supplyItems.tenantId, tenantId), eq(supplyItems.id, id)))
+      .returning();
+    return toSupplyItem(updated!);
+  });
+}
+
 export async function removeSupplyItem(tenantId: string, id: string): Promise<void> {
   await withTenantContext(db, tenantId, async (tx) => {
     await tx

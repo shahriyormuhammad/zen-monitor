@@ -24,6 +24,7 @@ import {
   listSupplyItems,
   matchVendorCode,
   removeSupplyItem,
+  setSupplyItemBoxes,
   type AssembleArticleInput,
   type ProfileForDropdown,
   type SupplyItem,
@@ -122,6 +123,13 @@ export async function removeSupplyItemAction(tenantId: string, id: string): Prom
   await requireTenantFeatureAccess(tenantId, 'supply', ['owner', 'admin', 'manager']);
   await removeSupplyItem(tenantId, id);
   revalidatePath('/supply');
+}
+
+export async function setSupplyItemBoxesAction(tenantId: string, id: string, boxes: number): Promise<SupplyItem> {
+  await requireTenantFeatureAccess(tenantId, 'supply', ['owner', 'admin', 'manager']);
+  const item = await setSupplyItemBoxes(tenantId, id, boxes);
+  revalidatePath('/supply');
+  return item;
 }
 
 export async function clearSupplyItemsAction(tenantId: string): Promise<void> {

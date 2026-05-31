@@ -26,6 +26,7 @@ import {
 } from '@/app/(dashboard)/supply/actions';
 import type { ProfileForDropdown } from '@/server/supply-builder/service';
 import { ArticleAutocomplete } from './ArticleAutocomplete';
+import { BulkArticlePicker } from './BulkArticlePicker';
 
 type Row = {
   id: string;
@@ -117,8 +118,15 @@ export function InvoiceTab({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="space-y-4">
+      {/* Массовое добавление галочками (п.2) */}
+      <BulkArticlePicker
+        tenantId={tenantId}
+        articles={articles}
+        onAdded={() => queryClient.invalidateQueries({ queryKey: ['supply-items', tenantId] })}
+      />
+
       <div className="dashboard-card p-4">
-        <h3 className="text-[14px] font-extrabold">Накладная</h3>
+        <h3 className="text-[14px] font-extrabold">Накладная — ручной ввод</h3>
         <p className="mt-0.5 text-[11px] text-muted-foreground">
           Вбей пары «артикул → коробок». Подсказки появляются по мере ввода. Часть кода тоже сработает: <code className="rounded bg-subtle px-1 font-mono">519-5</code> → <code className="rounded bg-subtle px-1 font-mono">A519-5 ТН-10</code>. Сокращение <code className="rounded bg-subtle px-1 font-mono">-5</code> после <code className="rounded bg-subtle px-1 font-mono">A519-2</code> = <code className="rounded bg-subtle px-1 font-mono">A519-5</code>. Enter в поле «Кор.» добавляет строку.
         </p>

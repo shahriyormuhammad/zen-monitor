@@ -19,9 +19,11 @@ import {
   addSupplyItemAction, clearSupplyItemsAction, listProfilesForArticleAction,
   listSupplyArticlesAction, listSupplyItemsAction, removeSupplyItemAction,
   buildSupplyXlsxAction, createWbSupplyAction, listWbWarehousesAction,
+  setSupplyItemBoxesAction,
 } from '@/app/(dashboard)/supply/actions';
 import type { ProfileForDropdown, SupplyItem } from '@/server/supply-builder/service';
 import { ArticleAutocomplete } from './ArticleAutocomplete';
+import { BulkArticlePicker } from './BulkArticlePicker';
 
 type Article = Awaited<ReturnType<typeof listSupplyArticlesAction>>[number];
 
@@ -119,6 +121,11 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
 
   const removeMutation = useMutation({
     mutationFn: (id: string) => removeSupplyItemAction(tenantId, id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['supply-items', tenantId] }),
+  });
+
+  const setBoxesMutation = useMutation({
+    mutationFn: ({ id, boxes }: { id: string; boxes: number }) => setSupplyItemBoxesAction(tenantId, id, boxes),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['supply-items', tenantId] }),
   });
 
@@ -293,6 +300,13 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
         </div>
       </div>
 
+      {/* ─ Массовое добавление галочками (п.2) ─ */}
+      <BulkArticlePicker
+        tenantId={tenantId}
+        articles={articles}
+        onAdded={() => queryClient.invalidateQueries({ queryKey: ['supply-items', tenantId] })}
+      />
+
       {/* ─ Supply list ─ */}
       {items.length > 0 ? (
         <div className="dashboard-card overflow-hidden">
@@ -439,7 +453,7 @@ export function SupplyStep1Tab({ tenantId }: { tenantId: string }) {
 
           <div className="divide-y divide-border">
             {items.map((item, idx) => (
-              <SupplyItemRow key={item.id} item={item} idx={idx + 1} onRemove={() => removeMutation.mutate(item.id)} />
+              <SupplyItemRow key={item.id} item={item} idx={idx + 1} onRemove={() => removeMutation.mutate(item.id)} onSetBoxes={(boxes) => setBoxesMutation.mutate({ id: item.id, boxes })} />
             ))}
           </div>
         </div>
@@ -461,7 +475,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function SupplyItemRow({ item, idx, onRemove }: { item: SupplyItem; idx: number; onRemove: () => void }) {
+function SupplyItemRow({ item, idx, onRemove, onSetBoxes }: { item: SupplyItem; idx: number; onRemove: () => void; onSetBoxes: (boxes: number) => void }) {
+  const [boxesInput, setBoxesInput] = useState(String(item.boxes));
+  useEffect(() => { setBoxesInput(String(item.boxes)); }, [item.boxes]);
+  const commitBoxes = () => {
+    const n = Math.max(1, Math.floor(Number(boxesInput) || 1));
+    if (n !== item.boxes) onSetBoxes(n);
+    else setBoxesInput(String(item.boxes));
+  };
   return (
     <div className="grid gap-3 p-4 sm:grid-cols-[40px_minmax(0,1fr)_auto]">
       <div className="text-[11px] font-bold text-muted-foreground">#{idx}</div>
@@ -486,8 +507,16 @@ function SupplyItemRow({ item, idx, onRemove }: { item: SupplyItem; idx: number;
             </span>
           ) : null}
         </div>
-        <div className="mt-1 text-[11px] text-muted-foreground">
-          {item.boxes} {plural(item.boxes, 'коробка', 'коробки', 'коробок')} · {item.sumPerBox} пар/кор · <strong>{fmtNum(item.totalPieces)} шт</strong>
+        <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+          <input
+            type="number" min={1} value={boxesInput}
+            onChange={(e) => setBoxesInput(e.target.value)}
+            onBlur={commitBoxes}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }}
+            className="h-6 w-12 rounded border border-border bg-card px-1 text-right font-mono text-[11px] outline-none focus:border-rose-400"
+            title="Кол-во коробок — измени и нажми Enter"
+          />
+          {plural(item.boxes, 'коробка', 'коробки', 'коробок')} · {item.sumPerBox} пар/кор · <strong>{fmtNum(item.totalPieces)} шт</strong>
           {item.missingBc > 0 ? <span className="ml-2 text-rose-600">⚠ нет {item.missingBc} штрихкод{plural(item.missingBc, '', 'а', 'ов')}</span> : null}
         </div>
         <div className="mt-2 flex flex-wrap gap-1 text-[10.5px] font-mono">
