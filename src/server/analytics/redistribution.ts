@@ -16,6 +16,18 @@ const MAX_RECOMMENDATIONS = 500;
 // 0.1→0.03: даже небольшой прирост на дальнем округе суммарно копит ИЛ.
 const MIN_LOCAL_SHARE_DELTA_PCT = 0.03;
 
+// ── V2: типы маршрутов сверх «снятия дефицита» ──────────────────────────────
+// Рост покрытия: развозим излишки на важные склады кабинета, где товара нет.
+const COVERAGE_TOP_WAREHOUSES = 18;       // сколько топ-складов кабинета держим «покрытыми»
+const COVERAGE_SEED_UNITS = 3;            // сколько «подсеваем» на пустой важный склад
+const COVERAGE_MIN_WAREHOUSE_ORDERS = 5;  // склад считается важным от стольких заказов кабинета
+// Разгрузка мёртвого стока: остаток, который почти не продаётся локально.
+const DEADSTOCK_MIN_COVERAGE_DAYS = 60;   // дней запаса, выше которых сток «мёртвый»
+const DEADSTOCK_MIN_UNITS = 2;
+
+/** Тип маршрута перераспределения. */
+export type RedistributionRouteKind = "deficit" | "coverage" | "deadstock";
+
 type MatrixCellRuntime = {
   officeKey: string;
   regionName: string;
@@ -36,6 +48,7 @@ type SizeMatrixRuntime = {
 };
 
 type TransferDraft = {
+  kind: RedistributionRouteKind;
   fromRegionName: string;
   fromWarehouse: string;
   fromOfficeId: number | null;
@@ -55,6 +68,8 @@ export type RedistributionTransferRecommendation = {
   brand: string | null;
   sizeName: string;
   chrtId: number | null;
+  kind: RedistributionRouteKind;
+  revenuePotentialRub: number;
   fromRegionName: string;
   fromWarehouse: string;
   fromOfficeId: number | null;
@@ -82,6 +97,12 @@ export type RedistributionScenario = {
   avgPriceRub: number;
   transferUnits: number;
   transferCount: number;
+  /** Маршруты по типам. */
+  deficitCount: number;
+  coverageCount: number;
+  deadstockCount: number;
+  /** Валовая потенциальная выручка перемещаемого стока (шт × ср. цена). */
+  grossRevenueRub: number;
   currentLocalSharePct: number;
   simulatedLocalSharePct: number;
   currentKrpPct: number;
@@ -123,6 +144,10 @@ export type RedistributionPlan = {
     recommendationCount: number;
     skuCount: number;
     transferUnits: number;
+    deficitCount: number;
+    coverageCount: number;
+    deadstockCount: number;
+    grossRevenueRub: number;
     estimatedSavingsRub: number;
     krpSavingsRub: number;
     ktrLogisticsSavingsRub: number;
@@ -286,6 +311,10 @@ function buildEmptyPlan(params: {
       recommendationCount: 0,
       skuCount: 0,
       transferUnits: 0,
+      deficitCount: 0,
+      coverageCount: 0,
+      deadstockCount: 0,
+      grossRevenueRub: 0,
       estimatedSavingsRub: 0,
       krpSavingsRub: 0,
       ktrLogisticsSavingsRub: 0,
@@ -539,6 +568,25 @@ export async function getRedistributionPlan(
     tenantAvgDeliveryRub = grandCount > 0 ? grandTotal / grandCount : 0;
   }
 
+  // V2: глобальный «универсум» складов кабинета — все офисы из матрицы с
+  // суммарным оборотом (важностью). Топ по обороту = склады, которые
+  // желательно «покрыть» каждым ходовым SKU (для маршрутов роста покрытия).
+  const warehouseUniverse = new Map<string, { regionName: string; officeName: string; officeId: number | null; totalOrders: number }>();
+  for (const matrix of matrixBySkuSize.values()) {
+    for (const cell of matrix.cells.values()) {
+      const u = warehouseUniverse.get(cell.officeKey) ?? {
+        regionName: cell.regionName, officeName: cell.officeName, officeId: cell.officeId, totalOrders: 0,
+      };
+      u.totalOrders += cell.ordersCount;
+      warehouseUniverse.set(cell.officeKey, u);
+    }
+  }
+  const importantWarehouses = Array.from(warehouseUniverse.entries())
+    .map(([officeKey, w]) => ({ officeKey, ...w }))
+    .filter((w) => w.totalOrders >= COVERAGE_MIN_WAREHOUSE_ORDERS)
+    .sort((a, b) => b.totalOrders - a.totalOrders)
+    .slice(0, COVERAGE_TOP_WAREHOUSES);
+
   const scenarios: RedistributionScenario[] = [];
   const recommendations: RedistributionTransferRecommendation[] = [];
 
@@ -590,13 +638,15 @@ export async function getRedistributionPlan(
       .filter((cell) => cell.surplus >= MIN_TRANSFER_UNITS)
       .sort((left, right) => right.surplus - left.surplus || right.stockCount - left.stockCount);
 
-    if (deficits.length === 0 || donors.length === 0) {
+    // Нужны доноры (излишек/сток), иначе перемещать нечего.
+    if (donors.length === 0) {
       continue;
     }
 
     const stockAfter = new Map<string, number>(cells.map((cell) => [cell.officeKey, cell.stockCount]));
     const transferDrafts: TransferDraft[] = [];
 
+    // ── Фаза 1: снятие дефицита (донор излишка → дефицит спроса) ──
     for (const deficit of deficits) {
       let remainingDeficit = deficit.deficit;
 
@@ -628,6 +678,7 @@ export async function getRedistributionPlan(
         );
 
         transferDrafts.push({
+          kind: "deficit",
           fromRegionName: donor.regionName,
           fromWarehouse: donor.officeName,
           fromOfficeId: donor.officeId,
@@ -641,6 +692,92 @@ export async function getRedistributionPlan(
           toCoverageDaysBefore: coverageDays(deficit.stockCount, deficit.dailyDemand),
         });
       }
+    }
+
+    // ── Фаза 2: рост покрытия — «подсеваем» остаток на важные склады
+    //    кабинета, где этого SKU+размера нет вообще (нет ячейки в матрице). ──
+    for (const target of importantWarehouses) {
+      if (matrix.cells.has(target.officeKey)) {
+        continue; // товар уже есть на этом складе
+      }
+      const donor = donors.find((candidate) => (
+        candidate.officeKey !== target.officeKey
+        && candidate.remainingSurplus >= MIN_TRANSFER_UNITS
+      ));
+      if (!donor) {
+        break;
+      }
+      const seed = Math.min(COVERAGE_SEED_UNITS, Math.floor(donor.remainingSurplus));
+      if (seed < MIN_TRANSFER_UNITS) {
+        continue;
+      }
+      donor.remainingSurplus -= seed;
+      stockAfter.set(
+        donor.officeKey,
+        Math.max(0, (stockAfter.get(donor.officeKey) ?? donor.stockCount) - seed),
+      );
+      stockAfter.set(target.officeKey, (stockAfter.get(target.officeKey) ?? 0) + seed);
+      transferDrafts.push({
+        kind: "coverage",
+        fromRegionName: donor.regionName,
+        fromWarehouse: donor.officeName,
+        fromOfficeId: donor.officeId,
+        toRegionName: target.regionName,
+        toWarehouse: target.officeName,
+        toOfficeId: target.officeId,
+        transferUnits: seed,
+        fromStockBefore: donor.stockCount,
+        toStockBefore: 0,
+        fromCoverageDaysBefore: coverageDays(donor.stockCount, donor.dailyDemand),
+        toCoverageDaysBefore: 0,
+      });
+    }
+
+    // ── Фаза 3: разгрузка мёртвого стока — донор с огромным запасом дней
+    //    (почти не продаётся локально) везёт остаток на склад с реальным
+    //    спросом. Один разгрузочный маршрут на донора. ──
+    const demandCells = cells
+      .map((cell) => ({ ...cell, dailyDemand: cell.ordersCount / effectiveDateWindowDays }))
+      .filter((cell) => cell.dailyDemand > 0)
+      .sort((left, right) => right.dailyDemand - left.dailyDemand);
+    for (const donor of donors) {
+      if (donor.remainingSurplus < DEADSTOCK_MIN_UNITS) {
+        continue;
+      }
+      const donorCoverage = coverageDays(donor.stockCount, donor.dailyDemand);
+      const isDead = donorCoverage === null || donorCoverage >= DEADSTOCK_MIN_COVERAGE_DAYS;
+      if (!isDead) {
+        continue;
+      }
+      const target = demandCells.find((cell) => cell.officeKey !== donor.officeKey);
+      if (!target) {
+        break;
+      }
+      const cap = Math.max(DEADSTOCK_MIN_UNITS, Math.ceil(target.dailyDemand * TARGET_COVERAGE_DAYS));
+      const units = Math.min(Math.floor(donor.remainingSurplus), cap);
+      if (units < DEADSTOCK_MIN_UNITS) {
+        continue;
+      }
+      donor.remainingSurplus -= units;
+      stockAfter.set(
+        donor.officeKey,
+        Math.max(0, (stockAfter.get(donor.officeKey) ?? donor.stockCount) - units),
+      );
+      stockAfter.set(target.officeKey, (stockAfter.get(target.officeKey) ?? target.stockCount) + units);
+      transferDrafts.push({
+        kind: "deadstock",
+        fromRegionName: donor.regionName,
+        fromWarehouse: donor.officeName,
+        fromOfficeId: donor.officeId,
+        toRegionName: target.regionName,
+        toWarehouse: target.officeName,
+        toOfficeId: target.officeId,
+        transferUnits: units,
+        fromStockBefore: donor.stockCount,
+        toStockBefore: target.stockCount,
+        fromCoverageDaysBefore: donorCoverage,
+        toCoverageDaysBefore: coverageDays(target.stockCount, target.dailyDemand),
+      });
     }
 
     if (transferDrafts.length === 0) {
@@ -670,7 +807,10 @@ export async function getRedistributionPlan(
     const currentLocalSharePct = clampPercent((localForecastBefore / forecastOrders) * 100);
     const simulatedLocalSharePct = clampPercent((localForecastAfter / forecastOrders) * 100);
     const localShareDeltaPct = simulatedLocalSharePct - currentLocalSharePct;
-    if (localShareDeltaPct < MIN_LOCAL_SHARE_DELTA_PCT) {
+    // Маршруты роста покрытия / разгрузки стока могут не двигать локализацию —
+    // их не отсекаем порогом ИЛ; порог применяем только к чисто-дефицитным.
+    const hasNonDeficit = transferDrafts.some((transfer) => transfer.kind !== "deficit");
+    if (!hasNonDeficit && localShareDeltaPct < MIN_LOCAL_SHARE_DELTA_PCT) {
       continue;
     }
 
@@ -697,6 +837,11 @@ export async function getRedistributionPlan(
 
     const product = productByNm.get(matrix.nmId);
     const transferUnits = transferDrafts.reduce((sum, transfer) => sum + transfer.transferUnits, 0);
+    const deficitCount = transferDrafts.filter((transfer) => transfer.kind === "deficit").length;
+    const coverageCount = transferDrafts.filter((transfer) => transfer.kind === "coverage").length;
+    const deadstockCount = transferDrafts.filter((transfer) => transfer.kind === "deadstock").length;
+    // Валовая потенциальная выручка перемещаемого стока (шт × ср. цена заказа).
+    const grossRevenueRub = transferUnits * avgPriceRub;
 
     const scenario: RedistributionScenario = {
       nmId: matrix.nmId,
@@ -708,6 +853,10 @@ export async function getRedistributionPlan(
       avgPriceRub: round(avgPriceRub, 2),
       transferUnits,
       transferCount: transferDrafts.length,
+      deficitCount,
+      coverageCount,
+      deadstockCount,
+      grossRevenueRub: round(grossRevenueRub, 2),
       currentLocalSharePct: round(currentLocalSharePct, 2),
       simulatedLocalSharePct: round(simulatedLocalSharePct, 2),
       currentKrpPct: round(currentKrpPct, 2),
@@ -732,6 +881,8 @@ export async function getRedistributionPlan(
         brand: product?.brand ?? null,
         sizeName: matrix.sizeName,
         chrtId: matrix.chrtId,
+        kind: transfer.kind,
+        revenuePotentialRub: round(transfer.transferUnits * avgPriceRub, 2),
         fromRegionName: transfer.fromRegionName,
         fromWarehouse: transfer.fromWarehouse,
         fromOfficeId: transfer.fromOfficeId,
@@ -824,6 +975,10 @@ export async function getRedistributionPlan(
     recommendationCount: sortedRecommendations.length,
     skuCount: sortedScenarios.length,
     transferUnits: sortedRecommendations.reduce((sum, recommendation) => sum + recommendation.transferUnits, 0),
+    deficitCount: sortedRecommendations.filter((recommendation) => recommendation.kind === "deficit").length,
+    coverageCount: sortedRecommendations.filter((recommendation) => recommendation.kind === "coverage").length,
+    deadstockCount: sortedRecommendations.filter((recommendation) => recommendation.kind === "deadstock").length,
+    grossRevenueRub: round(sortedRecommendations.reduce((sum, recommendation) => sum + recommendation.revenuePotentialRub, 0), 2),
     estimatedSavingsRub: round(sortedScenarios.reduce((sum, scenario) => sum + scenario.estimatedSavingsRub, 0), 2),
     krpSavingsRub: round(sortedScenarios.reduce((sum, scenario) => sum + scenario.krpSavingsRub, 0), 2),
     ktrLogisticsSavingsRub: round(sortedScenarios.reduce((sum, scenario) => sum + scenario.ktrLogisticsSavingsRub, 0), 2),
