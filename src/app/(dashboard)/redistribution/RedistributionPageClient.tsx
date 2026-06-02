@@ -33,7 +33,12 @@ import type {
 } from '@/server/analytics/redistribution';
 
 import { exportRedistributionXlsx } from './redistributionExport';
-import { getRobotSessionStatus, type RobotSessionStatus } from './actions';
+import {
+  getRobotSessionStatus,
+  getRobotRuntimeStatus,
+  type RobotSessionStatus,
+  type RobotRuntimeStatus,
+} from './actions';
 import { LocalizationView } from './LocalizationView';
 
 const PAGE_SIZE = 20;
@@ -246,6 +251,76 @@ function RobotStatusBlock({ status }: { status: RobotSessionStatus }) {
     <div className={`rounded-2xl border ${cls} px-4 py-3 shadow-sm`}>
       <div className="text-sm font-semibold text-foreground">{title}</div>
       <div className="mt-1 text-xs text-muted-foreground">{body}</div>
+    </div>
+  );
+}
+
+function RuntimeMetric({ label, value, tone }: { label: string; value: string; tone?: 'ok' | 'warn' }) {
+  const valueCls =
+    tone === 'ok'
+      ? 'text-emerald-700 dark:text-emerald-300'
+      : tone === 'warn'
+        ? 'text-amber-700 dark:text-amber-300'
+        : 'text-foreground';
+  return (
+    <div className="flex flex-col">
+      <span className="text-[10px] uppercase tracking-wide opacity-60">{label}</span>
+      <span className={`text-[13px] font-bold ${valueCls}`}>{value}</span>
+    </div>
+  );
+}
+
+/** Оперативный статус робота: жив ли, режим, авто-отправка, слоты, очередь. */
+function RobotRuntimeBlock({ status }: { status: RobotRuntimeStatus | null | undefined }) {
+  if (!status) return null;
+
+  const lastMs = status.lastRunAt ? Date.parse(status.lastRunAt) : null;
+  const minsAgo = lastMs != null && Number.isFinite(lastMs) ? Math.max(0, Math.round((Date.now() - lastMs) / 60000)) : null;
+  const alive = minsAgo != null && minsAgo <= 10;
+
+  const tone: 'ok' | 'warning' | 'critical' = status.forbidden ? 'critical' : alive ? 'ok' : 'warning';
+  const cls =
+    tone === 'ok'
+      ? 'border-emerald-500/40 bg-emerald-500/5'
+      : tone === 'warning'
+        ? 'border-amber-500/40 bg-amber-500/5'
+        : 'border-rose-500/40 bg-rose-500/5';
+  const title = status.forbidden
+    ? '🔴 WB заблокировал перераспределение'
+    : alive
+      ? '🟢 Робот работает'
+      : '🟡 Робот давно не отвечал';
+
+  const agoStr = minsAgo == null ? 'нет данных' : minsAgo <= 1 ? 'только что' : `${minsAgo} мин назад`;
+  const modeStr = status.lastMode === 'aggressive' ? 'агрессивный' : status.lastMode === 'background' ? 'фоновый' : status.lastMode ?? '';
+  const routesTotal = status.routes.reduce((s, r) => s + r.count, 0);
+
+  return (
+    <div className={`rounded-2xl border ${cls} px-4 py-3 shadow-sm`}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm font-semibold text-foreground">{title}</div>
+        <div className="text-[11px] text-muted-foreground">
+          {agoStr}{modeStr ? ` · ${modeStr} режим` : ''}
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+        <RuntimeMetric label="Авто-отправка" value={status.autoSubmit ? 'вкл' : 'выкл'} tone={status.autoSubmit ? 'ok' : 'warn'} />
+        <RuntimeMetric label="Проверок 24ч" value={String(status.runs24h)} />
+        <RuntimeMetric label="Слотов 24ч" value={String(status.openedSlots24h)} tone={status.openedSlots24h > 0 ? 'ok' : undefined} />
+        <RuntimeMetric label="Слотов 7д" value={String(status.openedSlots7d)} />
+        <RuntimeMetric label="В очереди" value={String(status.queue.planned + status.queue.queued)} />
+        <RuntimeMetric label="Отправлено" value={String(status.queue.submitted)} tone={status.queue.submitted > 0 ? 'ok' : undefined} />
+        <RuntimeMetric label="Ошибок" value={String(status.queue.failed)} tone={status.queue.failed > 0 ? 'warn' : undefined} />
+        <RuntimeMetric label="Маршрутов" value={String(routesTotal)} />
+      </div>
+      {status.forbidden ? (
+        <div className="mt-2 text-[11px] text-rose-600 dark:text-rose-300">
+          WB вернул 401/403 (перераспределение недоступно для кабинета). Перевойди в{' '}
+          <Link href="/settings" className="font-medium underline underline-offset-2">Настройках → WB ЛК</Link> — монитор возобновится.
+        </div>
+      ) : status.lastMessage ? (
+        <div className="mt-2 line-clamp-2 text-[11px] text-muted-foreground opacity-80">{status.lastMessage}</div>
+      ) : null}
     </div>
   );
 }
@@ -952,6 +1027,14 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
     staleTime: 30_000,
   });
 
+  const robotRuntimeQuery = useQuery<RobotRuntimeStatus | null, Error>({
+    queryKey: ['redistribution-robot-runtime', tenantId],
+    queryFn: async () => (tenantId ? getRobotRuntimeStatus(tenantId) : null),
+    enabled: Boolean(tenantId),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+
   const executionLogQuery = useQuery<RedistributionExecutionLog | null, Error>({
     queryKey: ['redistribution-execution-log', tenantId],
     queryFn: async () => {
@@ -1405,6 +1488,8 @@ export function RedistributionPageClient({ tenantId: tenantIdProp }: { tenantId?
           Проверяю статус робота…
         </div>
       )}
+
+      <RobotRuntimeBlock status={robotRuntimeQuery.data} />
 
       <ManualRequestBlock
         warehouseOptions={warehouseOptions}
