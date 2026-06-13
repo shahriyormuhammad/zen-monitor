@@ -39,14 +39,24 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const pathname = request.nextUrl.pathname
+  const publicRoutes = new Set([
+    '/',
+    '/lab',
+    '/pricing',
+    '/results',
+    '/contact',
+    '/about',
+    '/blog',
+    '/signals-wildberries',
+    '/unit-economics-wildberries',
+    '/reklama-wildberries',
+    '/stocks-wildberries',
+    '/seo-wildberries',
+    '/reviews-wildberries',
+    '/seo-otzyvy-wildberries',
+  ])
   const isPublicRoute =
-    pathname === '/'
-    || pathname === '/lab'
-    || pathname === '/pricing'
-    || pathname === '/results'
-    || pathname === '/contact'
-    || pathname === '/about'
-    || pathname === '/blog'
+    publicRoutes.has(pathname)
 
   const isResetPasswordRoute = request.nextUrl.pathname.startsWith('/reset-password')
   const isAuthRoute =
