@@ -1,521 +1,466 @@
-import type { Metadata } from 'next';
-import Link from 'next/link';
+'use client';
+
+import { useState } from 'react';
 import {
-  ArrowRight,
-  CircleDollarSign,
-  Clock,
-  Layers3,
-  Link2,
-  MessageSquareQuote,
-  PackageSearch,
-  Plug,
-  Radar,
-  ReceiptText,
-  ShieldCheck,
-  Target,
-  TrendingUp,
-  Users,
+  AlertTriangle,
+  ArrowDownToLine,
+  Check,
+  ChevronRight,
+  Download,
+  MapPin,
+  PackageCheck,
+  TrendingDown,
+  Truck,
 } from 'lucide-react';
 
-import { PricingPlans } from '@/components/PricingPlans';
-import { ThemeToggle } from '@/components/ThemeToggle';
-import { ZenMonitorLogo } from '@/components/brand/ZenMonitorLogo';
+/* ─────────────────────────────────────────────────────────── mock data ─── */
 
-export const metadata: Metadata = {
-  title: 'Zen Monitor — лендинг (вариант Б)',
-  description: 'Светлый доверительный лендинг: боли → цены → возможности.',
-  robots: { index: false, follow: false },
+type Status = 'critical' | 'deficit' | 'ok' | 'over';
+
+const OKRUGA: { key: string; whs: string; ship: number; status: Status; loc: number; geo: number; fact: number }[] = [
+  { key: 'Северо-Запад', whs: 'Шушары', ship: 156, status: 'critical', loc: 42, geo: 1343, fact: 479 },
+  { key: 'Урал', whs: 'ЕКБ-Перспективный', ship: 255, status: 'deficit', loc: 55, geo: 3381, fact: 2207 },
+  { key: 'Юг', whs: 'Краснодар · Невинномысск', ship: 368, status: 'deficit', loc: 58, geo: 2960, fact: 2310 },
+  { key: 'Центр', whs: 'Электросталь · Тула', ship: 616, status: 'deficit', loc: 71, geo: 7649, fact: 6557 },
+  { key: 'Поволжье', whs: 'Казань · Новосемейкино', ship: 320, status: 'ok', loc: 64, geo: 2706, fact: 2640 },
+];
+
+const WAREHOUSES: { name: string; ship: number; tone: string }[] = [
+  { name: 'Электросталь', ship: 372, tone: 'bg-indigo-500' },
+  { name: 'Тула', ship: 244, tone: 'bg-indigo-400' },
+  { name: 'ЕКБ-Перспективный', ship: 255, tone: 'bg-sky-500' },
+  { name: 'Новосемейкино', ship: 220, tone: 'bg-emerald-500' },
+  { name: 'Краснодар', ship: 200, tone: 'bg-amber-500' },
+  { name: 'Невинномысск', ship: 168, tone: 'bg-amber-400' },
+  { name: 'Шушары', ship: 156, tone: 'bg-rose-500' },
+  { name: 'Сарапул', ship: 100, tone: 'bg-violet-500' },
+];
+
+const SKU = [
+  { art: 'A1115-8 ТН-9', size: '43', wh: 'Электросталь', geo: 64, fact: 65, stock: 1, days: 13, krp: 0, ship: 13 },
+  { art: 'A1115-8 ТН-9', size: '40', wh: 'Электросталь', geo: 46, fact: 67, stock: 10, days: 32, krp: 0, ship: 0 },
+  { art: 'A1115-14 ТН-9', size: '44', wh: 'Шушары', geo: 54, fact: 5, stock: 0, days: 0, krp: 2.05, ship: 41 },
+  { art: 'A1115-14 ТН-9', size: '43', wh: 'Шушары', geo: 38, fact: 4, stock: 0, days: 0, krp: 2.05, ship: 30 },
+  { art: 'A722-12 ТН-9', size: '41', wh: 'Краснодар', geo: 31, fact: 8, stock: 2, days: 9, krp: 1.20, ship: 24 },
+  { art: 'A722-12 ТН-9', size: '42', wh: 'Казань', geo: 11, fact: 30, stock: 211, days: 202, krp: 0, ship: 0 },
+  { art: 'A528-2 ТН-15', size: '40', wh: 'ЕКБ-Перспективный', geo: 49, fact: 9, stock: 1, days: 6, krp: 2.05, ship: 38 },
+  { art: 'A528-2 ТН-15', size: '41', wh: 'Новосемейкино', geo: 28, fact: 24, stock: 18, days: 31, krp: 0, ship: 5 },
+] as const;
+
+const TOTAL = OKRUGA.reduce((s, o) => s + o.ship, 0);
+const IL = 1.08;
+const IRP = 1.59;
+const DEFICIT_COUNT = OKRUGA.filter((o) => o.status === 'critical' || o.status === 'deficit').length;
+
+const statusMeta: Record<Status, { label: string; text: string; chip: string; dot: string }> = {
+  critical: { label: 'острый дефицит', text: 'text-rose-600 dark:text-rose-300', chip: 'bg-rose-50 dark:bg-rose-400/15', dot: 'bg-rose-500' },
+  deficit: { label: 'дефицит', text: 'text-amber-600 dark:text-amber-300', chip: 'bg-amber-50 dark:bg-amber-400/15', dot: 'bg-amber-500' },
+  ok: { label: 'в норме', text: 'text-emerald-600 dark:text-emerald-300', chip: 'bg-emerald-50 dark:bg-emerald-400/15', dot: 'bg-emerald-500' },
+  over: { label: 'перетарка', text: 'text-slate-500', chip: 'bg-subtle', dot: 'bg-slate-400' },
 };
 
-const SIGNUP = '/signup';
-const LOGIN = '/login';
+const fmt = (n: number) => n.toLocaleString('ru-RU');
 
-const pains = [
-  { icon: CircleDollarSign, t: 'Выручка растёт — денег нет', d: 'Обороты вверх, а на счёте пусто. Где осела прибыль — непонятно.' },
-  { icon: TrendingUp, t: 'Реклама жжёт бюджет вслепую', d: 'Какие кампании ушли в минус — видно только в конце месяца.' },
-  { icon: Layers3, t: 'Десять выгрузок из Wildberries', d: 'Продажи, реклама, остатки, комиссии — склеиваешь руками каждый раз.' },
-  { icon: MessageSquareQuote, t: 'Отзывы остаются без ответа', d: 'Вопросы копятся, рейтинг падает, следом проседает конверсия.' },
-  { icon: PackageSearch, t: 'Остатки не там, где нужно', d: 'То дефицит на ходовом складе, то деньги заморожены в неликвиде.' },
-  { icon: Users, t: 'Команда живёт в переписке', d: 'Задачи теряются в чатах: кто что проверил — никто не помнит.' },
+const VARIANTS = [
+  { id: 'A', name: 'Действие по округам' },
+  { id: 'B', name: 'Гео-баланс' },
+  { id: 'C', name: 'Один ответ' },
+  { id: 'D', name: 'Дашборд' },
+  { id: 'E', name: 'Тёмный терминал' },
 ] as const;
 
-const stats = [
-  { v: '15', l: 'разделов в одном контуре' },
-  { v: '7', l: 'типов сигналов риска' },
-  { v: '3', l: 'режима управления рекламой' },
-  { v: '1', l: 'вход для всех кабинетов' },
-] as const;
+/* ──────────────────────────────────────────────────────────────── page ─── */
 
-const steps = [
-  { n: '1', icon: Plug, t: 'Создайте аккаунт', d: 'Минута на регистрацию. Карта на старте не нужна.' },
-  { n: '2', icon: Link2, t: 'Подключите кабинет WB', d: 'Токен проходит проверку, платформа синхронизирует данные.' },
-  { n: '3', icon: Radar, t: 'Получите контур', d: 'Обзор, сигналы и экономика наполняются вашими цифрами.' },
-  { n: '4', icon: Users, t: 'Подключите команду', d: 'Роли, очереди и уведомления — каждый в своей зоне.' },
-] as const;
-
-const faq = [
-  { q: 'Что нужно для запуска?', a: 'Создать аккаунт и подключить кабинет Wildberries по API-токену. Дальше платформа сама синхронизирует продажи, рекламу, остатки и отзывы.' },
-  { q: 'Нужно ли что-то устанавливать?', a: 'Нет, Zen Monitor работает в браузере. Уведомления о важных событиях дополнительно приходят в Telegram.' },
-  { q: 'Подойдёт ли для одного кабинета?', a: 'Да. Ценность не в количестве кабинетов, а в том, что прибыль, реклама и риски собираются в один ритм. С одним кабинетом эффект виден сразу.' },
-  { q: 'Насколько безопасно подключение?', a: 'Кабинет подключается через защищённый контур, токен проходит проверку, данные разных кабинетов изолированы друг от друга.' },
-  { q: 'Реклама правда на автопилоте?', a: 'Да, под контролем: три режима — советник, безопасный полуавтомат и полный автопилот с ограничителями. Каждое действие фиксируется в журнале.' },
-] as const;
-
-export default function LandingB() {
+export default function SupplyLab() {
+  const [v, setV] = useState<(typeof VARIANTS)[number]['id']>('A');
   return (
-    <div className="bg-background text-foreground">
-      <RevealStyles />
-      <Header />
-      <main>
-        <Hero />
-        <TrustStrip />
-        <Pains />
-        <Pricing />
-        <Features />
-        <How />
-        <Faq />
-        <FinalCta />
-      </main>
-      <Footer />
+    <div className="min-h-screen bg-background text-foreground">
+      <div className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2 px-4 py-2.5 sm:px-6">
+          <span className="mr-1 text-[12px] font-bold text-muted-foreground">Поставки · слепки дизайна</span>
+          {VARIANTS.map((x) => (
+            <button
+              key={x.id}
+              type="button"
+              onClick={() => setV(x.id)}
+              className={`rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${
+                v === x.id ? 'bg-indigo-600 text-white' : 'border border-border text-slate-600 hover:border-indigo-300 dark:text-slate-300'
+              }`}
+            >
+              {x.id} · {x.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {v === 'A' && <VariantA />}
+      {v === 'B' && <VariantB />}
+      {v === 'C' && <VariantC />}
+      {v === 'D' && <VariantD />}
+      {v === 'E' && <VariantE />}
     </div>
   );
 }
 
-/* ----------------------------------------------------------------- header -- */
+/* ════════════════════════════════════════════════ A — Действие по округам ═ */
 
-function Header() {
+function VariantA() {
   return (
-    <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
-        <Link href="/" className="flex items-center gap-2.5">
-          <ZenMonitorLogo size={40} />
-          <span className="text-[15px] font-bold tracking-tight">Zen Monitor</span>
-        </Link>
-        <nav className="hidden items-center gap-7 text-[14px] text-slate-600 dark:text-slate-300 md:flex">
-          <a href="#pains" className="transition-colors hover:text-indigo-600">Проблема</a>
-          <a href="#pricing" className="transition-colors hover:text-indigo-600">Тарифы</a>
-          <a href="#features" className="transition-colors hover:text-indigo-600">Возможности</a>
-          <a href="#faq" className="transition-colors hover:text-indigo-600">Вопросы</a>
-        </nav>
-        <div className="flex items-center gap-2">
-          <div className="hidden sm:block"><ThemeToggle /></div>
-          <Link href={LOGIN} className="hidden h-10 items-center rounded-xl border border-border px-4 text-[14px] font-semibold text-slate-700 transition-colors hover:border-indigo-300 dark:text-slate-200 sm:inline-flex">
-            Войти
-          </Link>
-          <Cta href={SIGNUP} size="sm">Регистрация</Cta>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-/* ------------------------------------------------------------------- hero -- */
-
-function Hero() {
-  return (
-    <section className="relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[560px]">
-        <div className="absolute left-1/2 top-[-120px] h-[420px] w-[820px] -translate-x-1/2 rounded-full bg-indigo-500/[0.08] blur-[120px]" />
-      </div>
-      <div className="mx-auto grid max-w-6xl items-center gap-14 px-4 pb-10 pt-16 sm:px-6 lg:grid-cols-[1.02fr_0.98fr] lg:pb-16 lg:pt-24">
+    <Wrap>
+      <TopLine />
+      <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <span className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[12px] font-semibold text-indigo-700 dark:border-indigo-400/25 dark:bg-indigo-400/10 dark:text-indigo-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" /> Операционная аналитика Wildberries
-          </span>
-          <h1 className="mt-6 text-[2.5rem] font-black leading-[1.05] tracking-[-0.035em] sm:text-[3.3rem]">
-            Прибыль Wildberries под <span className="text-indigo-600 dark:text-indigo-400">контролем</span>, а не на ощущениях.
-          </h1>
-          <p className="mt-6 max-w-xl text-[17px] leading-8 text-slate-600 dark:text-slate-300">
-            Продажи, реклама, юнит-экономика, остатки и отзывы — в одном спокойном рабочем контуре.
-            Не графики постфактум, а очередь решений: что съедает маржу сегодня и что с этим делать.
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Cta href={SIGNUP}>
-              Попробовать 3 дня бесплатно
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-            </Cta>
-            <a href="#features" className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-5 py-3.5 text-[15px] font-semibold text-slate-700 transition-colors hover:border-indigo-300 dark:text-slate-200">
-              Как это работает
-            </a>
-          </div>
-          <ul className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-[14px] text-slate-500 dark:text-slate-400">
-            {['3 дня бесплатно', 'Без банковской карты', 'Подключение по API-токену WB'].map((x) => (
-              <li key={x} className="flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-emerald-500" /> {x}
-              </li>
-            ))}
-          </ul>
+          <p className="text-[13px] font-semibold text-indigo-600 dark:text-indigo-400">План поставки · 30 дней</p>
+          <h1 className="mt-1 text-[2rem] font-black tracking-tight">Отгрузить {fmt(TOTAL)} шт</h1>
+          <p className="mt-1 text-[14px] text-muted-foreground">по {OKRUGA.length} округам · {DEFICIT_COUNT} в дефиците · цель — поднять локализацию</p>
         </div>
-        <HeroFrame />
+        <ShipBtn />
+      </header>
+
+      <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {[...OKRUGA].sort((a, b) => b.ship - a.ship).map((o) => {
+          const m = statusMeta[o.status];
+          return (
+            <div key={o.key} className="rounded-2xl border border-border bg-card p-5 transition-shadow hover:shadow-[var(--shadow-md)]">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-[14px] font-bold"><MapPin className="h-4 w-4 text-muted-foreground" />{o.key}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${m.chip} ${m.text}`}>{m.label}</span>
+              </div>
+              <p className="mt-3 text-[28px] font-black tabular-nums">{fmt(o.ship)} <span className="text-[14px] font-semibold text-muted-foreground">шт</span></p>
+              <p className="text-[12.5px] text-muted-foreground">{o.whs}</p>
+              <div className="mt-3">
+                <div className="flex items-center justify-between text-[11px] text-muted-foreground"><span>локализация</span><span className="font-semibold">{o.loc}%</span></div>
+                <Bar value={o.loc} />
+              </div>
+            </div>
+          );
+        })}
       </div>
-    </section>
+
+      <FullTable />
+    </Wrap>
   );
 }
 
-function HeroFrame() {
+/* ═══════════════════════════════════════════════════════ B — Гео-баланс ══ */
+
+function VariantB() {
+  const max = Math.max(...OKRUGA.map((o) => o.geo));
   return (
-    <div className="reveal relative">
-      <div className="marketing-float rounded-[1.5rem] border border-border bg-card p-2.5 shadow-[0_44px_90px_-44px_rgba(30,41,59,0.45)]">
-        <div className="overflow-hidden rounded-[1.2rem] border border-border/70 bg-subtle">
-          <div className="flex items-center gap-1.5 border-b border-border/70 px-4 py-2.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-rose-400/70" />
-            <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
-            <span className="ml-2 text-[12px] font-medium text-slate-500">Обзор кабинета</span>
-            <span className="ml-auto rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">live</span>
+    <Wrap>
+      <TopLine />
+      <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
+        <aside className="rounded-2xl border border-border bg-card p-6">
+          <p className="text-[13px] font-semibold text-muted-foreground">К отгрузке за 30 дней</p>
+          <p className="mt-1 text-[2.4rem] font-black leading-none tabular-nums">{fmt(TOTAL)}</p>
+          <p className="text-[13px] text-muted-foreground">штук по {OKRUGA.length} округам</p>
+          <div className="mt-5 space-y-3">
+            <Gauge label="Индекс локализации (ИЛ)" value={IL} target={1.0} />
+            <Gauge label="Индекс распред. (ИРП)" value={IRP} target={0.0} />
           </div>
-          <div className="space-y-3 p-4">
-            <div className="grid grid-cols-3 gap-2.5">
-              {[['Чистая прибыль', '1,24 млн', '+18%'], ['ДРР', '9,4%', '−2,1 пп'], ['Маржа', '42%', '+4 пп']].map(([l, v, d]) => (
-                <div key={l} className="rounded-xl border border-border/70 bg-card p-2.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{l}</p>
-                  <p className="mt-1 text-[16px] font-bold tabular-nums">{v}</p>
-                  <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">{d}</p>
+          <ShipBtn full />
+        </aside>
+
+        <div className="rounded-2xl border border-border bg-card p-6">
+          <p className="text-[14px] font-bold">Баланс по округам — где спрос не закрыт локально</p>
+          <p className="mt-0.5 text-[12.5px] text-muted-foreground">Гео-заказы (нужно) против факт-отгрузок (есть). Разрыв = нелокальные заказы → растят индексы.</p>
+          <div className="mt-5 space-y-4">
+            {[...OKRUGA].sort((a, b) => (b.geo - b.fact) - (a.geo - a.fact)).map((o) => {
+              const gap = o.geo - o.fact;
+              const m = statusMeta[o.status];
+              return (
+                <div key={o.key}>
+                  <div className="flex items-center justify-between text-[13px]">
+                    <span className="font-semibold">{o.key}</span>
+                    <span className={`font-semibold ${m.text}`}>+{fmt(o.ship)} шт · разрыв {fmt(gap)}</span>
+                  </div>
+                  <div className="mt-1.5 h-3 overflow-hidden rounded-full bg-subtle">
+                    <div className="h-full rounded-full bg-indigo-500/30" style={{ width: `${(o.geo / max) * 100}%` }}>
+                      <div className={`h-full rounded-full ${m.dot}`} style={{ width: `${(o.fact / o.geo) * 100}%` }} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-4 flex items-center gap-1.5 text-[11.5px] text-muted-foreground"><span className="h-2 w-2 rounded-full bg-indigo-500/40" /> гео-заказы (нужно) · <span className="h-2 w-2 rounded-full bg-rose-500" /> факт (закрыто локально)</p>
+        </div>
+      </div>
+      <FullTable />
+    </Wrap>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════ C — Один ответ ══ */
+
+function VariantC() {
+  return (
+    <Wrap>
+      <TopLine />
+      <div className="grid items-center gap-10 py-6 lg:grid-cols-[1fr_360px]">
+        <div>
+          <p className="text-[14px] font-semibold text-muted-foreground">На 30 дней нужно отгрузить</p>
+          <p className="mt-2 text-[5rem] font-black leading-[0.95] tabular-nums">{fmt(TOTAL)}</p>
+          <p className="text-[15px] text-muted-foreground">штук · {DEFICIT_COUNT} округа в дефиците</p>
+          <div className="mt-7 space-y-2.5">
+            <p className="text-[13px] font-semibold">Куда срочно:</p>
+            {[...OKRUGA].filter((o) => o.status !== 'ok').sort((a, b) => statusRank(b) - statusRank(a)).slice(0, 3).map((o) => {
+              const m = statusMeta[o.status];
+              return (
+                <div key={o.key} className="flex items-center gap-3">
+                  <span className={`h-2.5 w-2.5 rounded-full ${m.dot}`} />
+                  <span className="text-[15px] font-semibold">{o.key}</span>
+                  <span className="text-[13px] text-muted-foreground">{o.whs}</span>
+                  <span className="ml-auto text-[15px] font-black tabular-nums">{fmt(o.ship)} шт</span>
+                </div>
+              );
+            })}
+          </div>
+          <ShipBtn />
+        </div>
+        <Donut />
+      </div>
+      <FullTable />
+    </Wrap>
+  );
+}
+
+/* ════════════════════════════════════════════════════════ D — Дашборд ════ */
+
+function VariantD() {
+  const max = Math.max(...WAREHOUSES.map((w) => w.ship));
+  return (
+    <Wrap>
+      <TopLine />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Kpi icon={ArrowDownToLine} label="К отгрузке, 30 дн" value={`${fmt(TOTAL)} шт`} accent />
+        <Kpi icon={AlertTriangle} label="Округов в дефиците" value={`${DEFICIT_COUNT} из ${OKRUGA.length}`} tone="amber" />
+        <Kpi icon={TrendingDown} label="Индекс локализации" value={IL.toFixed(2)} sub="цель ≤ 1.00" tone="rose" />
+        <Kpi icon={TrendingDown} label="Индекс распред. (ИРП)" value={IRP.toFixed(2)} sub="цель 0.00" tone="rose" />
+      </div>
+      <div className="mt-3 grid gap-3 lg:grid-cols-[1.4fr_1fr]">
+        <div className="rounded-2xl border border-border bg-card p-6">
+          <p className="text-[14px] font-bold">Сколько и куда отгрузить — по складам</p>
+          <div className="mt-5 space-y-2.5">
+            {[...WAREHOUSES].sort((a, b) => b.ship - a.ship).map((w) => (
+              <div key={w.name} className="flex items-center gap-3">
+                <span className="w-36 shrink-0 truncate text-[13px] text-slate-600 dark:text-slate-300">{w.name}</span>
+                <div className="h-6 flex-1 overflow-hidden rounded-md bg-subtle">
+                  <div className={`flex h-full items-center justify-end rounded-md ${w.tone} px-2 text-[11px] font-bold text-white`} style={{ width: `${(w.ship / max) * 100}%` }}>{w.ship}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-6">
+          <p className="text-[14px] font-bold">Локализация по округам</p>
+          <div className="mt-5 space-y-3.5">
+            {OKRUGA.map((o) => (
+              <div key={o.key}>
+                <div className="flex items-center justify-between text-[12.5px]"><span>{o.key}</span><span className="font-semibold">{o.loc}%</span></div>
+                <Bar value={o.loc} />
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-[11.5px] text-muted-foreground">Порог 60% → наценка ИРП снимается.</p>
+        </div>
+      </div>
+      <FullTable />
+    </Wrap>
+  );
+}
+
+/* ═══════════════════════════════════════════════════ E — Тёмный терминал ═ */
+
+function VariantE() {
+  const max = Math.max(...WAREHOUSES.map((w) => w.ship));
+  return (
+    <div className="bg-[oklch(0.16_0.02_265)] text-white">
+      <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-cyan-300">supply · 30d plan</p>
+            <h1 className="mt-2 text-[2.2rem] font-extrabold tracking-tight">Отгрузить <span className="text-cyan-300">{fmt(TOTAL)}</span> шт</h1>
+            <p className="mt-1 font-mono text-[12px] text-white/50">ИЛ {IL.toFixed(2)} · ИРП {IRP.toFixed(2)} · дефицит {DEFICIT_COUNT}/{OKRUGA.length} округов</p>
+          </div>
+          <button type="button" className="inline-flex items-center gap-2 rounded-lg bg-cyan-300 px-4 py-2.5 text-[13px] font-bold text-[oklch(0.16_0.02_265)]">
+            <Download className="h-4 w-4" /> Файлы для WB
+          </button>
+        </div>
+
+        <div className="mt-7 grid gap-3 lg:grid-cols-[1fr_1fr]">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+            <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-white/45">отгрузить по складам</p>
+            <div className="mt-4 space-y-2">
+              {[...WAREHOUSES].sort((a, b) => b.ship - a.ship).map((w) => (
+                <div key={w.name} className="flex items-center gap-3 font-mono text-[12px]">
+                  <span className="w-36 shrink-0 truncate text-white/70">{w.name}</span>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/8">
+                    <div className="h-full rounded-full bg-cyan-300" style={{ width: `${(w.ship / max) * 100}%` }} />
+                  </div>
+                  <span className="w-10 text-right font-bold text-white tabular-nums">{w.ship}</span>
                 </div>
               ))}
             </div>
-            <div className="rounded-xl border border-border/70 bg-card p-3.5">
-              <div className="flex items-center justify-between">
-                <p className="text-[12px] font-semibold">Очередь владельца · на сегодня</p>
-                <span className="text-[11px] text-slate-400">7 активных</span>
-              </div>
-              <div className="mt-2.5 space-y-1.5">
-                {[['Утечка ДРР по 4 SKU', 'bg-rose-500', 'блокер'], ['Риск дефицита — Коледино', 'bg-amber-500', 'сегодня'], ['Падение конверсии −18%', 'bg-sky-500', 'передать']].map(([t, c, tag]) => (
-                  <div key={t} className="flex items-center justify-between rounded-lg border border-border/60 bg-subtle px-2.5 py-2">
-                    <span className="flex items-center gap-2 text-[12.5px] font-medium"><span className={`h-1.5 w-1.5 rounded-full ${c}`} />{t}</span>
-                    <span className="text-[10px] uppercase tracking-wide text-slate-400">{tag}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-xl border border-border/70 bg-card p-3.5">
-              <div className="flex items-center justify-between">
-                <p className="text-[12px] font-semibold">Маржа по дням</p>
-                <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">+12,4% к неделе</span>
-              </div>
-              <div className="mt-3 flex h-16 items-end gap-1.5">
-                {[40, 55, 38, 64, 50, 72, 90].map((h, i) => (
-                  <div key={i} className="flex-1 rounded-t bg-indigo-500/85" style={{ height: `${h}%` }} />
-                ))}
-              </div>
-            </div>
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------ trust strip -- */
-
-function TrustStrip() {
-  return (
-    <div className="mx-auto max-w-6xl px-4 pb-6 sm:px-6 lg:pb-10">
-      <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border lg:grid-cols-4">
-        {stats.map((s) => (
-          <div key={s.l} className="bg-card p-5">
-            <dt className="text-[28px] font-black tracking-tight text-indigo-600 dark:text-indigo-400 sm:text-[32px]">{s.v}</dt>
-            <dd className="mt-1 text-[13px] leading-5 text-slate-500 dark:text-slate-400">{s.l}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ pains -- */
-
-function Pains() {
-  return (
-    <Section id="pains">
-      <Heading
-        kicker="Знакомая картина"
-        title="Продажи есть. Контроля — нет."
-        sub="Обычная аналитика показывает графики постфактум. Продавцу нужно не «посмотреть цифры», а понять, что прямо сейчас уводит деньги — и что делать."
-      />
-      <div className="mt-10 grid gap-x-10 gap-y-1 sm:grid-cols-2">
-        {pains.map((p) => (
-          <div key={p.t} className="reveal flex items-start gap-4 border-b border-border/60 py-5">
-            <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-400/15 dark:text-rose-300">
-              <p.icon className="h-5 w-5" />
-            </span>
-            <div>
-              <p className="text-[16px] font-semibold">{p.t}</p>
-              <p className="mt-1 text-[14px] leading-6 text-slate-500 dark:text-slate-400">{p.d}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="reveal mt-8 flex items-center gap-3 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-5 dark:border-indigo-400/25 dark:bg-indigo-400/[0.07]">
-        <ArrowRight className="h-5 w-5 shrink-0 text-indigo-600 dark:text-indigo-300" />
-        <p className="text-[15px] leading-6 text-slate-700 dark:text-slate-200">
-          Zen Monitor убирает ручную склейку выгрузок и превращает данные в <span className="font-semibold text-foreground">приоритеты и конкретные действия</span>.
-        </p>
-      </div>
-    </Section>
-  );
-}
-
-/* ---------------------------------------------------------------- pricing -- */
-
-function Pricing() {
-  return (
-    <Section id="pricing">
-      <Heading
-        center
-        kicker="Тарифы"
-        title="Понятная цена за охват — и скидка за срок"
-        sub="Тариф зависит от того, насколько сложен ваш контур. Чем длиннее подписка, тем ниже цена за месяц. Старт — 3 дня бесплатно, без карты."
-      />
-      <div className="reveal mt-10"><PricingPlans /></div>
-    </Section>
-  );
-}
-
-/* --------------------------------------------------------------- features -- */
-
-const spotlights = [
-  {
-    icon: Radar,
-    kicker: 'Сигналы и очереди',
-    title: 'Не дашборд, а очередь решений',
-    text: 'Платформа сама находит отрицательную маржу, утечки рекламы, риск дефицита и поисковые риски — и складывает их в очереди с владельцем, сроком и историей. Вы не ищете, что сломалось. Вы разбираете список.',
-    points: ['7 типов сигналов: маржа, реклама, остатки, логистика, контент, SEO, конверсия', 'Очереди: требует действия, заблокировано, ждёт решения, просрочено', 'История и передача задачи прямо внутри сигнала'],
-  },
-  {
-    icon: TrendingUp,
-    kicker: 'Реклама и автопилот',
-    title: 'Рекламой нужно управлять, а не смотреть на график',
-    text: 'Decision Center показывает, какие кампании усилить, какие срезать и какие остановить — с привязкой к прибыли, а не только к ДРР. Выберите режим: подсказки, безопасный полуавтомат или полный автопилот с ограничителями.',
-    points: ['Три режима: советник, полуавтомат, автопилот с лимитами', 'Решения привязаны к прибыли, а не только к ДРР', 'Журнал каждого действия — автопилот можно выключить в любой момент'],
-  },
-  {
-    icon: ReceiptText,
-    kicker: 'Юнит-экономика',
-    title: 'Реальная прибыль, а не строчка «выручка»',
-    text: 'Себестоимость, доставка в фулфилмент, логистика WB, упаковка, комиссия и реклама собираются в чистую прибыль и маржу по каждому SKU. Где данных WB не хватает — расходы задаются вручную.',
-    points: ['Полная себестоимость: закупка, доставка, фулфилмент, упаковка', 'Актуальные тарифы Wildberries и индекс локализации', 'Ручные расходы там, где выгрузки молчат'],
-  },
-] as const;
-
-function Features() {
-  return (
-    <Section id="features">
-      <Heading
-        center
-        kicker="Возможности"
-        title="Три слоя, на которых держится контроль"
-        sub="Сигналы говорят, куда смотреть. Экономика — сколько вы реально зарабатываете. Реклама — что с этим делать."
-      />
-      <div className="mt-14 space-y-16 lg:space-y-24">
-        {spotlights.map((s, i) => (
-          <div key={s.title} className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16">
-            <div className={`reveal ${i % 2 === 1 ? 'lg:order-2' : ''}`}>
-              <span className="inline-flex items-center gap-2 text-[13px] font-semibold text-indigo-600 dark:text-indigo-400">
-                <s.icon className="h-4 w-4" /> {s.kicker}
-              </span>
-              <h3 className="mt-3 text-[1.6rem] font-black tracking-[-0.03em] sm:text-[1.9rem]">{s.title}</h3>
-              <p className="mt-4 text-[16px] leading-7 text-slate-600 dark:text-slate-300">{s.text}</p>
-              <ul className="mt-6 space-y-3">
-                {s.points.map((pt) => (
-                  <li key={pt} className="flex items-start gap-3 text-[14.5px] leading-6 text-slate-700 dark:text-slate-200">
-                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 dark:bg-indigo-400/20 dark:text-indigo-300">✓</span>
-                    {pt}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className={`reveal ${i % 2 === 1 ? 'lg:order-1' : ''}`}>
-              <FeatureBoard kind={i} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </Section>
-  );
-}
-
-function FeatureBoard({ kind }: { kind: number }) {
-  const head =
-    kind === 0
-      ? { icon: Radar, t: 'Очередь владельца', b: '7 активных' }
-      : kind === 1
-        ? { icon: Target, t: 'Decision Center', b: '9 рекомендаций' }
-        : { icon: ReceiptText, t: 'Юнит-экономика', b: 'SKU · Худи' };
-  const HeadIcon = head.icon;
-  return (
-    <div className="rounded-2xl border border-border bg-card p-5 shadow-[0_24px_60px_-40px_rgba(30,41,59,0.4)]">
-      <div className="flex items-center justify-between border-b border-border/60 pb-3">
-        <span className="flex items-center gap-2 text-[14px] font-semibold"><HeadIcon className="h-4 w-4 text-indigo-600 dark:text-indigo-400" /> {head.t}</span>
-        <span className="rounded-full border border-border bg-subtle px-2.5 py-1 text-[11px] font-medium text-slate-500">{head.b}</span>
-      </div>
-      <div className="mt-3 space-y-2">
-        {kind === 0 && [['Утечка ДРР по 4 SKU', 'реклама', 'text-rose-600', 'bg-rose-50 dark:bg-rose-400/15'], ['Риск дефицита — Коледино', 'запас 3 дня', 'text-amber-600', 'bg-amber-50 dark:bg-amber-400/15'], ['Падение конверсии −18%', 'поиск', 'text-sky-600', 'bg-sky-50 dark:bg-sky-400/15']].map(([t, m, col, bg]) => (
-          <div key={t} className="flex items-center gap-3 rounded-xl border border-border/60 bg-subtle px-3 py-2.5">
-            <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${bg} ${col}`}><Clock className="h-4 w-4" /></span>
-            <div className="min-w-0 flex-1"><p className="truncate text-[13.5px] font-medium">{t}</p><p className="text-[11px] text-slate-400">{m}</p></div>
-          </div>
-        ))}
-        {kind === 1 && (
-          <>
-            <div className="flex rounded-xl border border-border/60 bg-subtle p-1">
-              {['Советник', 'Полуавтомат', 'Автопилот'].map((m, j) => (
-                <span key={m} className={`flex-1 rounded-lg px-2 py-1.5 text-center text-[11.5px] font-semibold ${j === 1 ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>{m}</span>
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+            <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-white/45">округа · разрыв локальности</p>
+            <div className="mt-3 divide-y divide-white/8">
+              {[...OKRUGA].sort((a, b) => statusRank(b) - statusRank(a)).map((o) => (
+                <div key={o.key} className="flex items-center gap-3 py-2.5 font-mono text-[12.5px]">
+                  <span className={`h-1.5 w-1.5 rounded-full ${statusMeta[o.status].dot}`} />
+                  <span className="font-semibold">{o.key}</span>
+                  <span className="text-white/40">{o.loc}%</span>
+                  <span className="ml-auto font-bold text-cyan-200">+{o.ship}</span>
+                </div>
               ))}
             </div>
-            {[['Худи оверсайз', 'ДРР 8,2%', '+12% ставка', 'text-emerald-600'], ['Платья миди', 'ДРР 21,4%', '−30% бюджет', 'text-amber-600'], ['Аксессуары', 'ДРР 34,0%', 'на паузу', 'text-rose-600']].map(([n, drr, rec, col]) => (
-              <div key={n} className="flex items-center justify-between rounded-xl border border-border/60 bg-subtle px-3 py-2.5">
-                <div><p className="text-[13.5px] font-medium">{n}</p><p className="text-[11px] text-slate-400">{drr}</p></div>
-                <span className={`text-[12px] font-semibold ${col}`}>{rec}</span>
-              </div>
-            ))}
-          </>
-        )}
-        {kind === 2 && (
-          <>
-            {[['Цена продажи', '2 490 ₽'], ['Закупка', '−640 ₽'], ['Логистика WB', '−92 ₽'], ['Комиссия 18%', '−448 ₽'], ['Реклама', '−210 ₽']].map(([l, v], j) => (
-              <div key={l} className="flex items-center justify-between px-1 text-[13px]">
-                <span className={j === 0 ? 'font-semibold' : 'text-slate-500'}>{l}</span>
-                <span className="font-semibold tabular-nums">{v}</span>
-              </div>
-            ))}
-            <div className="mt-2 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 dark:border-emerald-400/25 dark:bg-emerald-400/10">
-              <div><p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Чистая прибыль</p><p className="text-[19px] font-black">1 055 ₽</p></div>
-              <span className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[13px] font-bold text-white">Маржа 42%</span>
-            </div>
-          </>
-        )}
+          </div>
+        </div>
+        <FullTable dark />
       </div>
     </div>
   );
 }
 
-/* -------------------------------------------------------------------- how -- */
+/* ───────────────────────────────────────────────────── shared pieces ───── */
 
-function How() {
+function Wrap({ children }: { children: React.ReactNode }) {
+  return <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{children}</div>;
+}
+
+function TopLine() {
   return (
-    <Section id="how">
-      <Heading center kicker="С чего начать" title="От регистрации до первых решений" sub="Без разработчиков и установки. Контур наполняется вашими данными автоматически." />
-      <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {steps.map((s) => (
-          <li key={s.n} className="reveal rounded-2xl border border-border bg-card p-5">
-            <div className="flex items-center justify-between">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300"><s.icon className="h-5 w-5" /></span>
-              <span className="text-[22px] font-black text-border-strong">{s.n}</span>
-            </div>
-            <h3 className="mt-4 text-[15px] font-semibold">{s.t}</h3>
-            <p className="mt-1.5 text-[13.5px] leading-6 text-slate-500 dark:text-slate-400">{s.d}</p>
-          </li>
-        ))}
-      </ol>
-    </Section>
+    <div className="mb-6 flex flex-wrap items-center gap-x-5 gap-y-1 text-[12.5px] text-muted-foreground">
+      <span className="font-semibold text-foreground">Skinshop · Wildberries</span>
+      <span>период анализа 30 дн</span>
+      <span>горизонт 30 дн</span>
+      <span className="flex items-center gap-1.5">ИЛ <b className="text-foreground">{IL.toFixed(2)}</b> · ИРП <b className="text-foreground">{IRP.toFixed(2)}</b></span>
+    </div>
   );
 }
 
-/* -------------------------------------------------------------------- faq -- */
-
-function Faq() {
+function ShipBtn({ full = false }: { full?: boolean }) {
   return (
-    <Section id="faq">
-      <Heading center kicker="Вопросы" title="Частые вопросы" />
-      <div className="mx-auto mt-10 max-w-3xl divide-y divide-border border-y border-border">
-        {faq.map((f) => (
-          <details key={f.q} className="group px-1 py-4">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-[16px] font-semibold">
-              {f.q}
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border text-slate-400 transition-transform group-open:rotate-45">+</span>
-            </summary>
-            <p className="mt-3 max-w-2xl text-[14.5px] leading-7 text-slate-600 dark:text-slate-300">{f.a}</p>
-          </details>
-        ))}
-      </div>
-    </Section>
+    <button type="button" className={`mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-[14px] font-bold text-white transition-colors hover:bg-indigo-700 ${full ? 'w-full' : ''}`}>
+      <Truck className="h-4 w-4" /> Собрать поставку
+      <ChevronRight className="h-4 w-4" />
+    </button>
   );
 }
 
-/* -------------------------------------------------------------- final cta -- */
-
-function FinalCta() {
+function Bar({ value }: { value: number }) {
+  const tone = value >= 60 ? 'bg-emerald-500' : value >= 50 ? 'bg-amber-500' : 'bg-rose-500';
   return (
-    <Section>
-      <div className="reveal relative overflow-hidden rounded-[2rem] border border-indigo-300/40 bg-indigo-600 px-6 py-14 text-center text-white sm:px-10 dark:bg-indigo-600">
-        <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-        <h2 className="relative mx-auto max-w-2xl text-[1.9rem] font-black leading-tight tracking-[-0.03em] text-balance sm:text-[2.6rem]">
-          Возьмите прибыль Wildberries под контроль уже сегодня
-        </h2>
-        <p className="relative mx-auto mt-4 max-w-xl text-[16px] leading-7 text-indigo-100">
-          3 дня бесплатно, без банковской карты. Подключение по API-токену за пару минут.
-        </p>
-        <div className="relative mt-8 flex justify-center">
-          <Link href={SIGNUP} className="group inline-flex items-center gap-2 rounded-xl bg-white px-6 py-4 text-[16px] font-bold text-indigo-700 transition-transform hover:-translate-y-0.5">
-            Начать бесплатно <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-          </Link>
+    <div className="mt-1 h-2 overflow-hidden rounded-full bg-subtle">
+      <div className={`h-full rounded-full ${tone} transition-[width] duration-500`} style={{ width: `${value}%` }} />
+    </div>
+  );
+}
+
+function Gauge({ label, value, target }: { label: string; value: number; target: number }) {
+  const bad = value > target + 0.01;
+  return (
+    <div className="rounded-xl border border-border bg-subtle px-3 py-2.5">
+      <div className="flex items-center justify-between text-[12px]"><span className="text-muted-foreground">{label}</span><span className={`font-black tabular-nums ${bad ? 'text-rose-600 dark:text-rose-300' : 'text-emerald-600 dark:text-emerald-300'}`}>{value.toFixed(2)}</span></div>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">цель {target.toFixed(2)} · {bad ? 'переплата за логистику' : 'в норме'}</p>
+    </div>
+  );
+}
+
+function Kpi({ icon: Icon, label, value, sub, accent = false, tone }: { icon: typeof Truck; label: string; value: string; sub?: string; accent?: boolean; tone?: 'amber' | 'rose' }) {
+  const ic = accent ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-400/15 dark:text-indigo-300' : tone === 'amber' ? 'bg-amber-50 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300' : tone === 'rose' ? 'bg-rose-50 text-rose-600 dark:bg-rose-400/15 dark:text-rose-300' : 'bg-subtle text-slate-600';
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5">
+      <span className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ${ic}`}><Icon className="h-4 w-4" /></span>
+      <p className="mt-3 text-[24px] font-black tabular-nums">{value}</p>
+      <p className="text-[12.5px] text-muted-foreground">{label}</p>
+      {sub ? <p className="mt-0.5 text-[11px] text-muted-foreground">{sub}</p> : null}
+    </div>
+  );
+}
+
+function Donut() {
+  const total = WAREHOUSES.reduce((s, w) => s + w.ship, 0);
+  let acc = 0;
+  const colors = ['#6366f1', '#818cf8', '#0ea5e9', '#10b981', '#f59e0b', '#fbbf24', '#f43f5e', '#8b5cf6'];
+  const segs = WAREHOUSES.map((w, i) => {
+    const frac = w.ship / total;
+    const seg = { color: colors[i % colors.length], from: acc, to: acc + frac, w };
+    acc += frac;
+    return seg;
+  });
+  const grad = segs.map((s) => `${s.color} ${(s.from * 100).toFixed(1)}% ${(s.to * 100).toFixed(1)}%`).join(', ');
+  return (
+    <div className="mx-auto">
+      <div className="relative h-[260px] w-[260px] rounded-full" style={{ background: `conic-gradient(${grad})` }}>
+        <div className="absolute inset-[26%] flex flex-col items-center justify-center rounded-full bg-card text-center shadow-[var(--shadow-sm)]">
+          <p className="text-[26px] font-black leading-none tabular-nums">{fmt(total)}</p>
+          <p className="text-[11px] text-muted-foreground">шт по 8 складам</p>
         </div>
       </div>
-    </Section>
+    </div>
   );
 }
 
-/* ----------------------------------------------------------------- footer -- */
+function statusRank(o: { status: Status }) {
+  return { critical: 3, deficit: 2, ok: 1, over: 0 }[o.status];
+}
 
-function Footer() {
+/* ─── полная таблица «как у них, но красивее» ─────────────────────────────── */
+
+function FullTable({ dark = false }: { dark?: boolean }) {
+  const headBg = dark ? 'bg-white/[0.04] text-white/55' : 'bg-subtle text-muted-foreground';
+  const border = dark ? 'border-white/10' : 'border-border';
+  const rowHover = dark ? 'hover:bg-white/[0.03]' : 'hover:bg-subtle';
   return (
-    <footer className="border-t border-border bg-subtle">
-      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 sm:flex-row sm:px-6">
-        <div className="flex items-center gap-2.5">
-          <ZenMonitorLogo size={32} />
-          <span className="text-[14px] font-bold">Zen Monitor</span>
+    <section className={`mt-10 overflow-hidden rounded-2xl border ${border} ${dark ? 'bg-white/[0.02]' : 'bg-card'}`}>
+      <div className={`flex items-center justify-between gap-3 border-b ${border} px-5 py-3.5`}>
+        <div>
+          <p className="text-[14px] font-bold">Полная таблица · товар × склад</p>
+          <p className={`text-[12px] ${dark ? 'text-white/45' : 'text-muted-foreground'}`}>Если хочешь убедиться сам — все цифры по каждому размеру и складу.</p>
         </div>
-        <p className="text-[13px] text-slate-500">Операционная аналитика для продавцов Wildberries</p>
-        <div className="flex items-center gap-3 text-[13px]">
-          <Link href={LOGIN} className="font-semibold text-slate-600 hover:text-indigo-600 dark:text-slate-300">Войти</Link>
-          <Link href={SIGNUP} className="font-semibold text-indigo-600">Регистрация</Link>
-        </div>
+        <button type="button" className={`inline-flex items-center gap-1.5 rounded-lg border ${border} px-3 py-1.5 text-[12px] font-semibold ${dark ? 'text-white/80' : 'text-slate-600 dark:text-slate-300'}`}><Download className="h-3.5 w-3.5" /> Excel</button>
       </div>
-    </footer>
-  );
-}
-
-/* --------------------------------------------------------------- helpers --- */
-
-function Section({ id, children }: { id?: string; children: React.ReactNode }) {
-  return (
-    <section id={id} className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:py-24">
-      {children}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-[13px]">
+          <thead className={`text-left text-[11px] font-semibold uppercase tracking-wide ${headBg}`}>
+            <tr>
+              {['Артикул', 'Размер', 'Склад', 'Гео-заказы', 'Факт', 'Остаток', 'Хватит, дн', 'КРП', 'Отгрузить'].map((h) => (
+                <th key={h} className="px-4 py-2.5 font-semibold last:text-right">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className={`divide-y ${border}`}>
+            {SKU.map((r, i) => {
+              const problem = r.krp > 1;
+              const action = r.ship > 0;
+              return (
+                <tr key={i} className={`${rowHover} transition-colors`}>
+                  <td className="px-4 py-2.5 font-semibold">{r.art}</td>
+                  <td className={`px-4 py-2.5 tabular-nums ${dark ? 'text-white/70' : 'text-muted-foreground'}`}>{r.size}</td>
+                  <td className={`px-4 py-2.5 ${dark ? 'text-white/70' : 'text-muted-foreground'}`}>{r.wh}</td>
+                  <td className="px-4 py-2.5 tabular-nums">{r.geo}</td>
+                  <td className={`px-4 py-2.5 tabular-nums ${dark ? 'text-white/60' : 'text-muted-foreground'}`}>{r.fact}</td>
+                  <td className="px-4 py-2.5 tabular-nums">{r.stock}</td>
+                  <td className="px-4 py-2.5 tabular-nums">{r.days || '—'}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${problem ? 'bg-rose-50 text-rose-600 dark:bg-rose-400/15 dark:text-rose-300' : dark ? 'text-white/50' : 'text-muted-foreground'}`}>{r.krp.toFixed(2)}</span>
+                  </td>
+                  <td className="px-4 py-2.5 text-right">
+                    {action
+                      ? <span className="inline-flex items-center gap-1 font-black tabular-nums text-indigo-600 dark:text-indigo-300"><ArrowDownToLine className="h-3.5 w-3.5" />{r.ship}</span>
+                      : <span className={`inline-flex items-center gap-1 ${dark ? 'text-white/35' : 'text-muted-foreground'}`}><Check className="h-3.5 w-3.5" />ок</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className={`flex items-center gap-2 border-t ${border} px-5 py-2.5 text-[11.5px] ${dark ? 'text-white/45' : 'text-muted-foreground'}`}>
+        <PackageCheck className="h-3.5 w-3.5" /> Показаны топ-строки · в реале фильтры, сортировка и настройка колонок — но по умолчанию виден ответ, а не 236 колонок.
+      </div>
     </section>
   );
-}
-
-function Heading({ kicker, title, sub, center = false }: { kicker: string; title: string; sub?: string; center?: boolean }) {
-  return (
-    <div className={`reveal max-w-2xl ${center ? 'mx-auto text-center' : ''}`}>
-      <p className="text-[13px] font-semibold text-indigo-600 dark:text-indigo-400">{kicker}</p>
-      <h2 className="mt-2 text-[2rem] font-black leading-[1.1] tracking-[-0.035em] text-balance sm:text-[2.5rem]">{title}</h2>
-      {sub ? <p className={`mt-4 text-[16px] leading-7 text-slate-600 dark:text-slate-300 ${center ? 'mx-auto' : ''}`}>{sub}</p> : null}
-    </div>
-  );
-}
-
-function Cta({ href, children, size = 'md' }: { href: string; children: React.ReactNode; size?: 'sm' | 'md' }) {
-  const pad = size === 'sm' ? 'h-10 px-4 text-[14px]' : 'px-5 py-3.5 text-[15px]';
-  return (
-    <Link
-      href={href}
-      className={`group inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 font-bold text-white shadow-[0_14px_30px_-12px_rgba(79,70,229,0.7)] transition-transform hover:-translate-y-0.5 ${pad}`}
-    >
-      {children}
-    </Link>
-  );
-}
-
-function RevealStyles() {
-  const css = `
-    @supports (animation-timeline: view()) {
-      @media (prefers-reduced-motion: no-preference) {
-        .reveal{opacity:0;animation:reveal-up .9s linear both;animation-timeline:view();animation-range:entry 0% cover 30%}
-        @keyframes reveal-up{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
-      }
-    }
-  `;
-  return <style dangerouslySetInnerHTML={{ __html: css }} />;
 }
