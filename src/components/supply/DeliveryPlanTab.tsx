@@ -18,7 +18,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   listSupplyArticlesAction, computeArticleDistributionAction,
-  assembleSupplyFromPlanAction,
+  assembleSupplyFromPlanAction, loadDeficitTableAction,
 } from '@/app/(dashboard)/supply/actions';
 import type { DistributionResult, SupplyStrategy } from '@/server/supply/distribution';
 import { warehousesInOkrug, type Okrug } from '@/server/supply/geography';
@@ -57,6 +57,73 @@ function nextItemId(): string {
 function fmtNum(n: number): string {
   if (!Number.isFinite(n)) return '—';
   return Math.round(n).toLocaleString('ru-RU');
+}
+
+/* ── Answer-first сводка (период + сколько отгрузить + по округам) ─────── */
+
+const SUMMARY_OKRUGS: { code: string; label: string }[] = [
+  { code: 'ЦФО', label: 'Центр' }, { code: 'СЗФО', label: 'Северо-Запад' },
+  { code: 'ПФО', label: 'Поволжье' }, { code: 'УФО', label: 'Урал' },
+  { code: 'СФО', label: 'Сибирь+ДВ' }, { code: 'ЮФО', label: 'Юг' },
+];
+const SUMMARY_PERIODS: [string, number][] = [['Месяц', 30], ['2 месяца', 60], ['3 месяца', 90]];
+
+function SupplyHero({ tenantId }: { tenantId: string }) {
+  const [days, setDays] = useState(30);
+  // Тот же queryKey, что у DeficitClusters → react-query дедуплицирует запрос.
+  const q = useQuery({
+    queryKey: ['deficit', tenantId, days, days],
+    queryFn: () => loadDeficitTableAction(tenantId, days, days),
+    enabled: Boolean(tenantId),
+    staleTime: 30_000,
+  });
+  const t = q.data?.totals;
+  const need = t?.totalForecastNeed ?? 0;
+  const by = (t?.byOkrug ?? {}) as Record<string, { sales: number; stock: number; need: number }>;
+  const okMax = Math.max(1, ...SUMMARY_OKRUGS.map((o) => by[o.code]?.need ?? 0));
+  return (
+    <div className="dashboard-card p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[12px] font-semibold text-indigo-600 dark:text-indigo-400">План поставки · {days} дн</p>
+          <h2 className="mt-1 text-[26px] font-black tracking-tight text-slate-950 dark:text-white">
+            {q.isLoading ? 'Считаем…' : `Отгрузить ${fmtNum(need)} шт`}
+          </h2>
+          <p className="mt-0.5 text-[12px] text-muted-foreground">
+            {t
+              ? `${fmtNum(t.modelsCount)} артикулов · ${fmtNum(t.withDeficit)} с дефицитом · по гео-заказам и остаткам`
+              : 'Прогноз по гео-заказам и остаткам за период'}
+          </p>
+        </div>
+        <div className="flex rounded-full border border-border p-0.5 text-[12px] font-semibold">
+          {SUMMARY_PERIODS.map(([label, d]) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setDays(d)}
+              className={`rounded-full px-3 py-1 transition-colors ${days === d ? 'bg-foreground text-card' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        {SUMMARY_OKRUGS.map((o) => {
+          const n = by[o.code]?.need ?? 0;
+          return (
+            <div key={o.code} className="rounded-xl border border-border bg-background/50 p-3">
+              <p className="text-[11px] text-muted-foreground">{o.label}</p>
+              <p className="mt-0.5 text-[16px] font-black tabular-nums text-slate-950 dark:text-white">{fmtNum(n)}</p>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-subtle">
+                <div className={`h-full rounded-full ${n > 0 ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, (n / okMax) * 100)}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 /* ── Main component ─────────────────────────────── */
@@ -241,6 +308,8 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="space-y-4">
+      <SupplyHero tenantId={tenantId} />
+
       {/* ─ Add form ─ */}
       <div className="dashboard-card p-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
