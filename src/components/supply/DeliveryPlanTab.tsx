@@ -18,7 +18,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   listSupplyArticlesAction, computeArticleDistributionAction,
-  assembleSupplyFromPlanAction, loadDeficitTableAction, loadLocalizationAction,
+  assembleSupplyFromPlanAction, loadSupplyPlanAction, loadLocalizationAction,
 } from '@/app/(dashboard)/supply/actions';
 import type { DistributionResult, SupplyStrategy } from '@/server/supply/distribution';
 import { warehousesInOkrug, type Okrug } from '@/server/supply/geography';
@@ -70,29 +70,29 @@ const SUMMARY_PERIODS: [string, number][] = [['Месяц', 30], ['2 месяц�
 
 function SupplyHero({ tenantId }: { tenantId: string }) {
   const [days, setDays] = useState(30);
-  // Тот же queryKey, что у DeficitClusters → react-query дедуплицирует запрос.
   const q = useQuery({
-    queryKey: ['deficit', tenantId, days, days],
-    queryFn: () => loadDeficitTableAction(tenantId, days, days),
+    queryKey: ['supplyplan', tenantId, days, days],
+    queryFn: () => loadSupplyPlanAction(tenantId, days, days),
     enabled: Boolean(tenantId),
     staleTime: 30_000,
   });
-  const t = q.data?.totals;
-  const need = t?.totalForecastNeed ?? 0;
-  const by = (t?.byOkrug ?? {}) as Record<string, { sales: number; stock: number; need: number }>;
-  const okMax = Math.max(1, ...SUMMARY_OKRUGS.map((o) => by[o.code]?.need ?? 0));
+  const plan = q.data;
+  const need = plan?.total ?? 0;
+  const by = (plan?.byOkrug ?? {}) as Record<string, { ship: number; orders: number; stock: number }>;
+  const okMax = Math.max(1, ...SUMMARY_OKRUGS.map((o) => by[o.code]?.ship ?? 0));
+  const topWh = (plan?.byWarehouse ?? []).filter((w) => w.ship > 0).slice(0, 8);
   return (
     <div className="dashboard-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-[12px] font-semibold text-indigo-600 dark:text-indigo-400">План поставки · {days} дн</p>
+          <p className="text-[12px] font-semibold text-indigo-600 dark:text-indigo-400">План поставки · {days} дн · по складам</p>
           <h2 className="mt-1 text-[26px] font-black tracking-tight text-slate-950 dark:text-white">
             {q.isLoading ? 'Считаем…' : `Отгрузить ${fmtNum(need)} шт`}
           </h2>
           <p className="mt-0.5 text-[12px] text-muted-foreground">
-            {t
-              ? `${fmtNum(t.modelsCount)} артикулов · ${fmtNum(t.withDeficit)} с дефицитом · по гео-заказам и остаткам`
-              : 'Прогноз по гео-заказам и остаткам за период'}
+            {plan
+              ? `${fmtNum(plan.modelsCount)} артикулов · ${fmtNum(plan.withPlan)} к поставке · по складам (гео-отгрузки) и выкупам`
+              : 'Расчёт по складам — формула Поставлено'}
           </p>
         </div>
         <div className="flex rounded-full border border-border p-0.5 text-[12px] font-semibold">
@@ -110,7 +110,7 @@ function SupplyHero({ tenantId }: { tenantId: string }) {
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {SUMMARY_OKRUGS.map((o) => {
-          const n = by[o.code]?.need ?? 0;
+          const n = by[o.code]?.ship ?? 0;
           return (
             <div key={o.code} className="rounded-xl border border-border bg-background/50 p-3">
               <p className="text-[11px] text-muted-foreground">{o.label}</p>
@@ -122,6 +122,19 @@ function SupplyHero({ tenantId }: { tenantId: string }) {
           );
         })}
       </div>
+      {topWh.length > 0 ? (
+        <div className="mt-3">
+          <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Разнарядка по складам</p>
+          <div className="flex flex-wrap gap-1.5">
+            {topWh.map((w) => (
+              <span key={w.warehouse} className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background/50 px-2 py-1 text-[11px]">
+                <span className="font-semibold text-foreground">{w.warehouse}</span>
+                <span className="font-mono font-bold text-rose-600 dark:text-rose-400">{fmtNum(w.ship)}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

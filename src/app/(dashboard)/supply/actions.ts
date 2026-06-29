@@ -24,6 +24,10 @@ import {
   type GeoPriorityResult,
 } from '@/server/supply/geo-priority';
 import {
+  computeSupplyPlan,
+  type SupplyPlanTotals,
+} from '@/server/supply/supply-plan';
+import {
   addSupplyItem,
   addSupplyItemsBulk,
   assembleSupplyFromPlan,
@@ -107,6 +111,17 @@ export async function loadGeoPriorityAction(
 ): Promise<GeoPriorityResult> {
   await requireTenantFeatureAccess(tenantId, 'supply');
   return buildRegionPriorities(tenantId, { periodDays });
+}
+
+/* ── План поставки ПО СКЛАДАМ (порт «Поставлено») ─────────── */
+
+export async function loadSupplyPlanAction(
+  tenantId: string,
+  periodDays = 30,
+  forecastDays = 30,
+): Promise<SupplyPlanTotals> {
+  await requireTenantFeatureAccess(tenantId, 'supply');
+  return computeSupplyPlan(tenantId, { periodDays, forecastDays });
 }
 
 /* ── Supply list (Шаг 1 + 2 + 3 shared storage) ─────────── */
