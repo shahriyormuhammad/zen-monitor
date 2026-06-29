@@ -16,6 +16,14 @@ import {
   type SizeDeficitRow,
 } from '@/server/supply/deficit';
 import {
+  computeCurrentLocalization,
+  type CurrentLocalizationResult,
+} from '@/server/supply/localization-data';
+import {
+  buildRegionPriorities,
+  type GeoPriorityResult,
+} from '@/server/supply/geo-priority';
+import {
   addSupplyItem,
   addSupplyItemsBulk,
   assembleSupplyFromPlan,
@@ -81,6 +89,24 @@ export async function loadSizeBreakdownAction(
 ): Promise<SizeDeficitRow[]> {
   await requireTenantFeatureAccess(tenantId, 'supply');
   return computeSizeBreakdown(tenantId, nmId, { periodDays, forecastDays });
+}
+
+/* ── Локализация (порт «Поставлено»: ИЛ/ИРП/КТР/КРП на наших данных) ─── */
+
+export async function loadLocalizationAction(
+  tenantId: string,
+  periodDays = 91,
+): Promise<CurrentLocalizationResult> {
+  await requireTenantFeatureAccess(tenantId, 'supply');
+  return computeCurrentLocalization(tenantId, { periodDays });
+}
+
+export async function loadGeoPriorityAction(
+  tenantId: string,
+  periodDays = 30,
+): Promise<GeoPriorityResult> {
+  await requireTenantFeatureAccess(tenantId, 'supply');
+  return buildRegionPriorities(tenantId, { periodDays });
 }
 
 /* ── Supply list (Шаг 1 + 2 + 3 shared storage) ─────────── */

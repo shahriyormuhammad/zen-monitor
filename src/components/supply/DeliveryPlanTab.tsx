@@ -18,7 +18,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   listSupplyArticlesAction, computeArticleDistributionAction,
-  assembleSupplyFromPlanAction, loadDeficitTableAction,
+  assembleSupplyFromPlanAction, loadDeficitTableAction, loadLocalizationAction,
 } from '@/app/(dashboard)/supply/actions';
 import type { DistributionResult, SupplyStrategy } from '@/server/supply/distribution';
 import { warehousesInOkrug, type Okrug } from '@/server/supply/geography';
@@ -122,6 +122,142 @@ function SupplyHero({ tenantId }: { tenantId: string }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/* ── Локализация (ИЛ/ИРП + «что лечить») — порт «Поставлено» на наши данные ── */
+
+const LOC_PERIODS: [string, number][] = [['Месяц', 30], ['13 недель', 91]];
+
+function ilColor(il: number): string {
+  if (il <= 1.0) return 'text-emerald-600 dark:text-emerald-400';
+  if (il <= 1.1) return 'text-amber-600 dark:text-amber-400';
+  return 'text-rose-600 dark:text-rose-400';
+}
+function irpColor(irp: number): string {
+  if (irp <= 0.001) return 'text-emerald-600 dark:text-emerald-400';
+  if (irp < 1) return 'text-amber-600 dark:text-amber-400';
+  return 'text-rose-600 dark:text-rose-400';
+}
+function shareBadge(share: number): string {
+  if (share >= 60) return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300';
+  if (share >= 45) return 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300';
+  return 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300';
+}
+
+function Kpi({ label, value, cls, hint }: { label: string; value: string; cls: string; hint: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-background/50 p-3" title={hint}>
+      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className={`mt-0.5 text-[20px] font-black tabular-nums ${cls}`}>{value}</p>
+    </div>
+  );
+}
+
+function LocalizationPanel({ tenantId }: { tenantId: string }) {
+  const [days, setDays] = useState(91);
+  const q = useQuery({
+    queryKey: ['localization', tenantId, days],
+    queryFn: () => loadLocalizationAction(tenantId, days),
+    enabled: Boolean(tenantId),
+    staleTime: 60_000,
+  });
+  const d = q.data;
+  const top = (d?.articles ?? []).slice(0, 20);
+  return (
+    <div className="dashboard-card p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[12px] font-semibold text-indigo-600 dark:text-indigo-400">Локализация · {days} дн</p>
+          <h3 className="mt-1 text-[18px] font-black tracking-tight text-slate-950 dark:text-white">Индексы логистики WB</h3>
+          <p className="mt-0.5 text-[12px] text-muted-foreground">
+            Чем ниже ИЛ и ИРП — тем дешевле прямая логистика. Доля локализации ≥ 60% обнуляет ИРП.
+          </p>
+        </div>
+        <div className="flex rounded-full border border-border p-0.5 text-[12px] font-semibold">
+          {LOC_PERIODS.map(([label, dd]) => (
+            <button
+              key={dd}
+              type="button"
+              onClick={() => setDays(dd)}
+              className={`rounded-full px-3 py-1 transition-colors ${days === dd ? 'bg-foreground text-card' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {q.isLoading ? (
+        <div className="mt-4 flex items-center gap-2 text-[12px] text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Считаем локализацию…
+        </div>
+      ) : !d || d.totalOrders === 0 ? (
+        <div className="mt-4 text-[12px] text-muted-foreground">Нет заказов с распознанным регионом за период.</div>
+      ) : (
+        <>
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Kpi label="ИЛ (индекс лок.)" value={d.il.toFixed(3)} cls={ilColor(d.il)} hint="Σ(заказы×КТР)/Σ заказов — цель ≤ 1" />
+            <Kpi label="ИРП" value={d.irp.toFixed(3)} cls={irpColor(d.irp)} hint="штраф за нелокальные продажи — цель 0" />
+            <Kpi label="Средняя доля лок." value={`${d.avgShare.toFixed(1)}%`} cls="text-foreground" hint="справочно — на индексы не влияет" />
+            <Kpi
+              label="Ниже 60%"
+              value={`${fmtNum(d.belowThreshold)} арт`}
+              cls={d.belowThreshold > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}
+              hint="артикулы, генерящие ИРП"
+            />
+          </div>
+
+          <div className="mt-4 overflow-x-auto">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Что лечить — топ по влиянию на ИЛ</p>
+            <table className="w-full min-w-[640px] text-[12px]">
+              <thead className="text-left text-muted-foreground">
+                <tr>
+                  <th className="px-2 py-1.5">Артикул</th>
+                  <th className="px-2 py-1.5 text-right">Заказов</th>
+                  <th className="px-2 py-1.5 text-right">Доля лок.</th>
+                  <th className="px-2 py-1.5 text-right">КТР</th>
+                  <th className="px-2 py-1.5 text-right">КРП</th>
+                  <th className="px-2 py-1.5 text-right">% влияния ИЛ</th>
+                  <th className="px-2 py-1.5 text-right">% влияния ИРП</th>
+                </tr>
+              </thead>
+              <tbody>
+                {top.map((a) => (
+                  <tr key={a.nmId} className="border-t border-border/60">
+                    <td className="px-2 py-1.5">
+                      <div className="flex items-center gap-2">
+                        {a.photoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={a.photoUrl} alt={a.vendorCode} className="h-9 w-7 rounded object-cover" />
+                        ) : (
+                          <div className="grid h-9 w-7 place-items-center rounded bg-subtle text-[10px] text-muted-foreground">—</div>
+                        )}
+                        <div className="flex flex-col leading-tight">
+                          <span className="font-bold text-foreground">{a.vendorCode}</span>
+                          <span className="text-[10px] text-muted-foreground">{a.nmId}{a.brand ? ` · ${a.brand}` : ''}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono">{fmtNum(a.orders)}</td>
+                    <td className="px-2 py-1.5 text-right">
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${shareBadge(a.share)}`}>{a.share.toFixed(0)}%</span>
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono">{a.ktr.toFixed(2)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{a.krp.toFixed(2)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono font-bold">{a.ilInfluencePct.toFixed(1)}%</td>
+                    <td className="px-2 py-1.5 text-right font-mono">{a.irpInfluencePct.toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {d.articles.length > top.length ? (
+              <p className="mt-2 text-[11px] text-muted-foreground">Показаны топ-{top.length} из {fmtNum(d.articles.length)} артикулов по влиянию.</p>
+            ) : null}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -310,7 +446,9 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
     <div className="space-y-4">
       <SupplyHero tenantId={tenantId} />
 
-      {/* ─ Add form ─ */}
+      <LocalizationPanel tenantId={tenantId} />
+
+      {/* ─ Add form ─ (виджет «Добавить артикул» — не менять) */}
       <div className="dashboard-card p-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <h3 className="text-[15px] font-extrabold">Добавить артикул</h3>
