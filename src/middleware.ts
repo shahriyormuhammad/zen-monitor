@@ -9,6 +9,6 @@ export const config = {
   matcher: [
     // API routes are protected per-endpoint because this app also exposes
     // public/system handlers such as Telegram webhooks and Inngest endpoints.
-    '/((?!api|_next|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api|_next|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|html)$).*)',
   ],
 }
