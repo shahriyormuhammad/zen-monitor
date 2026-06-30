@@ -24,7 +24,7 @@ import { Line, LineChart, ResponsiveContainer } from 'recharts';
 import type { DistributionResult, SupplyStrategy } from '@/server/supply/distribution';
 import { warehousesInOkrug, type Okrug } from '@/server/supply/geography';
 import { ArticleAutocomplete } from './ArticleAutocomplete';
-import { DeficitClusters } from './DeficitClusters';
+import { SupplyMatrix } from './SupplyMatrix';
 import { DeficitWidgets } from './DeficitWidgets';
 
 /* ── Types ─────────────────────────────────────── */
@@ -677,8 +677,8 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
       {/* ─ Виджеты сводки ─ */}
       <DeficitWidgets tenantId={tenantId} />
 
-      {/* ─ Дефицит по кластерам ─ */}
-      <DeficitClusters tenantId={tenantId} />
+      {/* ─ План поставки: товар × склад ─ */}
+      <SupplyMatrix tenantId={tenantId} />
 
       {/* ─ Sticky bottom bar ─ */}
       {selectedCount > 0 ? (

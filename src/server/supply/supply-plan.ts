@@ -48,6 +48,19 @@ export type TopArticle = {
   orders: number;
 };
 
+export type ArticleLeg = { warehouse: string; ship: number; orders: number; stock: number };
+
+export type ArticlePlanRow = {
+  nmId: number;
+  vendorCode: string;
+  photoUrl: string | null;
+  brand: string | null;
+  totalShip: number;
+  totalOrders: number;
+  /** «Отгрузить» по складам (только склады с ship>0), по убыванию. */
+  legs: ArticleLeg[];
+};
+
 export type SupplyPlanTotals = {
   /** Всего «Отгрузить», шт (Σ по складам). */
   total: number;
@@ -61,6 +74,8 @@ export type SupplyPlanTotals = {
   byWarehouse: WarehousePlanRow[];
   /** Топ артикулов к поставке (по убыванию «Отгрузить»). */
   topArticles: TopArticle[];
+  /** Все артикулы к поставке (ship>0) с разбивкой по складам — для грида товар×склад. */
+  articles: ArticlePlanRow[];
 };
 
 export type SupplyPlanInput = {
@@ -102,7 +117,7 @@ export async function computeSupplyPlan(
     `);
     const orderRows = ordersRes as unknown as Array<{ nm_id: string; warehouse_name: string | null; cnt: number }>;
     if (orderRows.length === 0) {
-      return { total: 0, modelsCount: 0, withPlan: 0, byOkrug: {}, byWarehouse: [], topArticles: [] };
+      return { total: 0, modelsCount: 0, withPlan: 0, byOkrug: {}, byWarehouse: [], topArticles: [], articles: [] };
     }
 
     // Выкупы по nm за период (для %выкупа).
@@ -166,6 +181,7 @@ export async function computeSupplyPlan(
     const byWarehouse = new Map<string, WarehousePlanRow>();
     const byOkrug = new Map<Okrug, SupplyPlanCell>();
     const perNm = new Map<number, { ship: number; orders: number }>();
+    const articleLegs = new Map<number, ArticleLeg[]>();
     let total = 0;
     let withPlan = 0;
 
@@ -208,6 +224,11 @@ export async function computeSupplyPlan(
           cell.stock += st.amount;
           byOkrug.set(zone, cell);
         }
+        if (ship > 0) {
+          const legs = articleLegs.get(nm) ?? [];
+          legs.push({ warehouse: wh, ship, orders: ord, stock: st.amount });
+          articleLegs.set(nm, legs);
+        }
       }
       total += nmShip;
       if (nmShip > 0) {
@@ -218,13 +239,13 @@ export async function computeSupplyPlan(
 
     // Метаданные карточек для топа артикулов.
     const prodRes = await tx.execute(sql`
-      SELECT nm_id::text AS nm_id, vendor_code, photo_url
+      SELECT nm_id::text AS nm_id, vendor_code, photo_url, brand
       FROM products
       WHERE tenant_id = ${tenantId} AND is_hidden = false AND is_archived = false
     `);
-    const meta = new Map<number, { vendorCode: string; photoUrl: string | null }>();
-    for (const p of prodRes as unknown as Array<{ nm_id: string; vendor_code: string; photo_url: string | null }>) {
-      meta.set(Number(p.nm_id), { vendorCode: p.vendor_code, photoUrl: p.photo_url });
+    const meta = new Map<number, { vendorCode: string; photoUrl: string | null; brand: string | null }>();
+    for (const p of prodRes as unknown as Array<{ nm_id: string; vendor_code: string; photo_url: string | null; brand: string | null }>) {
+      meta.set(Number(p.nm_id), { vendorCode: p.vendor_code, photoUrl: p.photo_url, brand: p.brand });
     }
     const topArticles: TopArticle[] = Array.from(perNm.entries())
       .sort((a, b) => b[1].ship - a[1].ship)
@@ -237,6 +258,19 @@ export async function computeSupplyPlan(
         orders: v.orders,
       }));
 
+    const articles: ArticlePlanRow[] = Array.from(perNm.entries())
+      .filter(([, v]) => v.ship > 0)
+      .sort((a, b) => b[1].ship - a[1].ship)
+      .map(([nm, v]) => ({
+        nmId: nm,
+        vendorCode: meta.get(nm)?.vendorCode ?? String(nm),
+        photoUrl: meta.get(nm)?.photoUrl ?? null,
+        brand: meta.get(nm)?.brand ?? null,
+        totalShip: v.ship,
+        totalOrders: v.orders,
+        legs: (articleLegs.get(nm) ?? []).slice().sort((a, b) => b.ship - a.ship),
+      }));
+
     return {
       total,
       modelsCount: allNm.size,
@@ -244,6 +278,7 @@ export async function computeSupplyPlan(
       byOkrug: Object.fromEntries(byOkrug.entries()) as Partial<Record<Okrug, SupplyPlanCell>>,
       byWarehouse: Array.from(byWarehouse.values()).sort((a, b) => b.ship - a.ship),
       topArticles,
+      articles,
     };
   });
 }
