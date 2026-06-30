@@ -267,7 +267,7 @@ function LocalizationPanel({ tenantId }: { tenantId: string }) {
   });
   const pts = tq.data?.points ?? [];
   const last = pts[pts.length - 1];
-  const prev = pts[pts.length - 2];
+  const first = pts[0];
   const pct = (a?: number, b?: number) => (a != null && b != null && b !== 0 ? ((a - b) / b) * 100 : null);
   return (
     <div className="dashboard-card p-5">
@@ -302,10 +302,10 @@ function LocalizationPanel({ tenantId }: { tenantId: string }) {
       ) : (
         <>
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <TrendCard label="ИЛ · индекс лок." value={(last?.il ?? d.il).toFixed(3)} deltaPct={pct(last?.il, prev?.il)} goodDir="down" data={pts.map((p) => p.il)} hint="Σ(заказы×КТР)/Σ заказов — ниже = дешевле логистика" />
-            <TrendCard label="ИРП" value={(last?.irp ?? d.irp).toFixed(3)} deltaPct={pct(last?.irp, prev?.irp)} goodDir="down" data={pts.map((p) => p.irp)} hint="штраф за нелокальные продажи — цель 0" />
-            <TrendCard label="Доля локализации" value={`${(last?.share ?? d.avgShare).toFixed(1)}%`} deltaPct={pct(last?.share, prev?.share)} goodDir="up" data={pts.map((p) => p.share)} hint="выше = дешевле логистика" />
-            <TrendCard label="Нелокальные/нед" value={fmtNum(last?.nonLocal ?? 0)} deltaPct={pct(last?.nonLocal, prev?.nonLocal)} goodDir="down" data={pts.map((p) => p.nonLocal)} hint="заказы из чужой зоны за последнюю неделю" />
+            <TrendCard label={`ИЛ · индекс лок. · ${days} дн`} value={d.il.toFixed(3)} deltaPct={pct(last?.il, first?.il)} goodDir="down" data={pts.map((p) => p.il)} hint="Σ(заказы×КТР)/Σ заказов за период — ниже = дешевле логистика. Линия — по неделям." />
+            <TrendCard label={`ИРП · ${days} дн`} value={d.irp.toFixed(3)} deltaPct={pct(last?.irp, first?.irp)} goodDir="down" data={pts.map((p) => p.irp)} hint="штраф за нелокальные продажи — цель 0. Линия — по неделям." />
+            <TrendCard label={`Доля локализации · ${days} дн`} value={`${d.avgShare.toFixed(1)}%`} deltaPct={pct(last?.share, first?.share)} goodDir="up" data={pts.map((p) => p.share)} hint="за период; выше = дешевле логистика. Линия — по неделям." />
+            <TrendCard label="Нелокальные/нед" value={fmtNum(last?.nonLocal ?? 0)} deltaPct={pct(last?.nonLocal, first?.nonLocal)} goodDir="down" data={pts.map((p) => p.nonLocal)} hint="заказы из чужой зоны за последнюю неделю" />
           </div>
 
           <div className="mt-4 overflow-x-auto">
