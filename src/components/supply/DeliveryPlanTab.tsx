@@ -22,7 +22,7 @@ import {
 } from '@/app/(dashboard)/supply/actions';
 import { Line, LineChart, ResponsiveContainer } from 'recharts';
 import type { DistributionResult, SupplyStrategy } from '@/server/supply/distribution';
-import { warehousesInOkrug, type Okrug } from '@/server/supply/geography';
+import { warehousesInOkrug, warehouseToOkrug, type Okrug } from '@/server/supply/geography';
 import { ArticleAutocomplete } from './ArticleAutocomplete';
 import { SupplyMatrix } from './SupplyMatrix';
 import { DeficitWidgets } from './DeficitWidgets';
@@ -385,6 +385,18 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
   const [strategy, setStrategy] = useState<SupplyStrategy>('cost');
   const [items, setItems] = useState<PlannedItem[]>([]);
 
+  // Птички: мультивыбор из плана поставки (Поставлено-распределение по складам).
+  const planQuery = useQuery({
+    queryKey: ['supplyplan', tenantId, 30, 30],
+    queryFn: () => loadSupplyPlanAction(tenantId, 30, 30),
+    enabled: Boolean(tenantId),
+    staleTime: 30_000,
+  });
+  const planArticles = planQuery.data?.articles ?? [];
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [pickerSearch, setPickerSearch] = useState('');
+
   /* Связку vendorCode ↔ nmId делаем ТОЛЬКО при выборе из подсказки (onPick),
    * а не реактивными эффектами — иначе ввод «снапается» назад и его нельзя
    * стереть/изменить (баг п.1). */
@@ -473,6 +485,66 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
       );
     }
   }, [vc, nm, boxes, pairs, articles, strategy, tenantId]);
+
+  const togglePicked = useCallback((nmId: number) => {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(nmId)) next.delete(nmId);
+      else next.add(nmId);
+      return next;
+    });
+  }, []);
+
+  /** Добавить отмеченные птички: распределение = план Поставлено (по складам),
+   *  агрегированный по округу под существующую таблицу плана. */
+  const addPicked = useCallback(() => {
+    const existing = new Set(items.map((it) => it.nmId));
+    const toAdd = planArticles.filter((a) => picked.has(a.nmId) && !existing.has(a.nmId));
+    if (toAdd.length > 0) {
+      const newItems: PlannedItem[] = toAdd.map((a) => {
+        const total = a.totalShip;
+        const byOk = new Map<Okrug, { orders: number; stock: number; ship: number; topWh: string; topShip: number }>();
+        for (const l of a.legs) {
+          const ok = (warehouseToOkrug(l.warehouse) ?? 'ЦФО') as Okrug;
+          const e = byOk.get(ok) ?? { orders: 0, stock: 0, ship: 0, topWh: '', topShip: 0 };
+          e.orders += l.orders;
+          e.stock += l.stock;
+          e.ship += l.ship;
+          if (l.ship > e.topShip) { e.topShip = l.ship; e.topWh = l.warehouse; }
+          byOk.set(ok, e);
+        }
+        const distribution = Array.from(byOk.entries()).map(([okrug, e]) => ({
+          okrug,
+          orders: e.orders,
+          stock: e.stock,
+          need: e.ship,
+          pct: total > 0 ? e.ship / total : 0,
+          qty: e.ship,
+          warehouse: e.topWh,
+          tariffCoef: 0,
+        }));
+        return {
+          id: nextItemId(),
+          nmId: a.nmId,
+          vendorCode: a.vendorCode,
+          brand: a.brand,
+          category: null,
+          photoUrl: a.photoUrl,
+          boxes: 1,
+          pairsPerBox: total,
+          totalQty: total,
+          status: 'ok' as const,
+          basis: 'deficit' as const,
+          distribution,
+          expanded: false,
+          selected: true,
+        };
+      });
+      setItems((prev) => prev.concat(newItems));
+    }
+    setPicked(new Set());
+    setPickerOpen(false);
+  }, [planArticles, picked, items]);
 
   const onStrategyChange = useCallback((next: SupplyStrategy) => {
     setStrategy(next);
@@ -618,6 +690,74 @@ export function DeliveryPlanTab({ tenantId }: { tenantId: string }) {
             <span className="text-[11px] text-muted-foreground">
               Итого: <strong>{fmtNum(Number(boxes) * Number(pairs))}</strong> шт
             </span>
+          ) : null}
+        </div>
+
+        {/* Птички — мультивыбор из плана поставки (распределение по Поставлено) */}
+        <div className="mt-3 border-t border-border pt-3">
+          <button
+            type="button"
+            onClick={() => setPickerOpen((o) => !o)}
+            className="inline-flex items-center gap-1.5 text-[12px] font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+          >
+            <ChevronDown className={`h-4 w-4 transition-transform ${pickerOpen ? 'rotate-180' : ''}`} />
+            Выбрать из плана списком{planArticles.length ? ` (${planArticles.length})` : ''}
+          </button>
+          {pickerOpen ? (
+            <div className="mt-2 rounded-xl border border-border">
+              <div className="border-b border-border p-2">
+                <input
+                  value={pickerSearch}
+                  onChange={(e) => setPickerSearch(e.target.value)}
+                  placeholder="Поиск артикула…"
+                  className="h-8 w-full rounded-lg border border-border bg-card px-3 text-[12px] text-foreground outline-none focus:border-rose-400"
+                />
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                {planQuery.isLoading ? (
+                  <div className="flex items-center gap-2 p-3 text-[12px] text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" /> Считаем план…
+                  </div>
+                ) : (
+                  (() => {
+                    const s = pickerSearch.trim().toLowerCase();
+                    const list = planArticles.filter(
+                      (a) => !s || a.vendorCode.toLowerCase().includes(s) || (a.brand ?? '').toLowerCase().includes(s) || String(a.nmId).includes(s),
+                    );
+                    if (list.length === 0) return <div className="p-3 text-[12px] text-muted-foreground">Ничего не найдено.</div>;
+                    return list.slice(0, 200).map((a) => (
+                      <label
+                        key={a.nmId}
+                        className="flex cursor-pointer items-center gap-2 border-t border-border/50 px-3 py-1.5 text-[12px] first:border-t-0 hover:bg-subtle/40"
+                      >
+                        <input type="checkbox" checked={picked.has(a.nmId)} onChange={() => togglePicked(a.nmId)} />
+                        {a.photoUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={a.photoUrl} alt={a.vendorCode} className="h-8 w-6 rounded object-cover" />
+                        ) : (
+                          <div className="grid h-8 w-6 place-items-center rounded bg-subtle text-[9px] text-muted-foreground">—</div>
+                        )}
+                        <span className="flex-1 truncate">
+                          <strong className="text-foreground">{a.vendorCode}</strong> <span className="text-muted-foreground">{a.brand ?? ''}</span>
+                        </span>
+                        <span className="font-mono font-bold text-rose-600 dark:text-rose-400">{fmtNum(a.totalShip)}</span>
+                      </label>
+                    ));
+                  })()
+                )}
+              </div>
+              <div className="flex items-center justify-between border-t border-border p-2">
+                <span className="text-[11px] text-muted-foreground">Отмечено: <strong>{picked.size}</strong> · распределение по складам как Поставлено</span>
+                <button
+                  type="button"
+                  onClick={addPicked}
+                  disabled={picked.size === 0}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-rose-500 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-rose-600 disabled:opacity-40"
+                >
+                  <Plus className="h-4 w-4" /> Добавить отмеченные ({picked.size})
+                </button>
+              </div>
+            </div>
           ) : null}
         </div>
       </div>
