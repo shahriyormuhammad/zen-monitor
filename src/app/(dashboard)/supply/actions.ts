@@ -32,6 +32,10 @@ import {
   type LocalizationTrendResult,
 } from '@/server/supply/localization-trend';
 import {
+  computeArticleSizes,
+  type ArticleSizesResult,
+} from '@/server/supply/supply-plan-sizes';
+import {
   addSupplyItem,
   addSupplyItemsBulk,
   assembleSupplyFromPlan,
@@ -134,6 +138,16 @@ export async function loadSupplyPlanAction(
 ): Promise<SupplyPlanTotals> {
   await requireTenantFeatureAccess(tenantId, 'supply');
   return computeSupplyPlan(tenantId, { periodDays, forecastDays });
+}
+
+export async function loadArticleSizesAction(
+  tenantId: string,
+  nmId: number,
+  periodDays = 30,
+  forecastDays = 30,
+): Promise<ArticleSizesResult> {
+  await requireTenantFeatureAccess(tenantId, 'supply');
+  return computeArticleSizes(tenantId, nmId, { periodDays, forecastDays });
 }
 
 /* ── Supply list (Шаг 1 + 2 + 3 shared storage) ─────────── */

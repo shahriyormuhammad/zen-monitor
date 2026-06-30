@@ -57,6 +57,7 @@ export type ArticlePlanRow = {
   brand: string | null;
   totalShip: number;
   totalOrders: number;
+  totalStock: number;
   /** «Отгрузить» по складам (только склады с ship>0), по убыванию. */
   legs: ArticleLeg[];
 };
@@ -268,6 +269,7 @@ export async function computeSupplyPlan(
         brand: meta.get(nm)?.brand ?? null,
         totalShip: v.ship,
         totalOrders: v.orders,
+        totalStock: Array.from(stockByNmWh.get(nm)?.values() ?? []).reduce((s, st) => s + st.amount, 0),
         legs: (articleLegs.get(nm) ?? []).slice().sort((a, b) => b.ship - a.ship),
       }));
 
