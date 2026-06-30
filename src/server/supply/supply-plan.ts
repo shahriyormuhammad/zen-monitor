@@ -102,7 +102,7 @@ export async function computeSupplyPlan(
     `);
     const orderRows = ordersRes as unknown as Array<{ nm_id: string; warehouse_name: string | null; cnt: number }>;
     if (orderRows.length === 0) {
-      return { total: 0, modelsCount: 0, withPlan: 0, byOkrug: {}, byWarehouse: [] };
+      return { total: 0, modelsCount: 0, withPlan: 0, byOkrug: {}, byWarehouse: [], topArticles: [] };
     }
 
     // Выкупы по nm за период (для %выкупа).
