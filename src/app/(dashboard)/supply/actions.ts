@@ -28,6 +28,10 @@ import {
   type SupplyPlanTotals,
 } from '@/server/supply/supply-plan';
 import {
+  computeLocalizationTrend,
+  type LocalizationTrendResult,
+} from '@/server/supply/localization-trend';
+import {
   addSupplyItem,
   addSupplyItemsBulk,
   assembleSupplyFromPlan,
@@ -103,6 +107,14 @@ export async function loadLocalizationAction(
 ): Promise<CurrentLocalizationResult> {
   await requireTenantFeatureAccess(tenantId, 'supply');
   return computeCurrentLocalization(tenantId, { periodDays });
+}
+
+export async function loadLocalizationTrendAction(
+  tenantId: string,
+  weeks = 13,
+): Promise<LocalizationTrendResult> {
+  await requireTenantFeatureAccess(tenantId, 'supply');
+  return computeLocalizationTrend(tenantId, { weeks });
 }
 
 export async function loadGeoPriorityAction(

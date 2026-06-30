@@ -18,8 +18,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   listSupplyArticlesAction, computeArticleDistributionAction,
-  assembleSupplyFromPlanAction, loadSupplyPlanAction, loadLocalizationAction,
+  assembleSupplyFromPlanAction, loadSupplyPlanAction, loadLocalizationAction, loadLocalizationTrendAction,
 } from '@/app/(dashboard)/supply/actions';
+import { Line, LineChart, ResponsiveContainer } from 'recharts';
 import type { DistributionResult, SupplyStrategy } from '@/server/supply/distribution';
 import { warehousesInOkrug, type Okrug } from '@/server/supply/geography';
 import { ArticleAutocomplete } from './ArticleAutocomplete';
@@ -205,27 +206,45 @@ function SupplyHero({ tenantId }: { tenantId: string }) {
 
 const LOC_PERIODS: [string, number][] = [['Месяц', 30], ['13 недель', 91]];
 
-function ilColor(il: number): string {
-  if (il <= 1.0) return 'text-emerald-600 dark:text-emerald-400';
-  if (il <= 1.1) return 'text-amber-600 dark:text-amber-400';
-  return 'text-rose-600 dark:text-rose-400';
-}
-function irpColor(irp: number): string {
-  if (irp <= 0.001) return 'text-emerald-600 dark:text-emerald-400';
-  if (irp < 1) return 'text-amber-600 dark:text-amber-400';
-  return 'text-rose-600 dark:text-rose-400';
-}
 function shareBadge(share: number): string {
   if (share >= 60) return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300';
   if (share >= 45) return 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300';
   return 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300';
 }
 
-function Kpi({ label, value, cls, hint }: { label: string; value: string; cls: string; hint: string }) {
+/** KPI с мини-трендом (спарклайн) и Δ% к прошлой неделе. goodDir — куда «хорошо». */
+function TrendCard({
+  label, value, deltaPct, goodDir, data, hint,
+}: {
+  label: string;
+  value: string;
+  deltaPct: number | null;
+  goodDir: 'up' | 'down';
+  data: number[];
+  hint: string;
+}) {
+  const good = deltaPct == null || deltaPct === 0 ? null : goodDir === 'up' ? deltaPct > 0 : deltaPct < 0;
+  const deltaCls = good == null ? 'text-muted-foreground' : good ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400';
+  const lineColor = good == null ? '#94a3b8' : good ? '#10b981' : '#ef4444';
+  const series = data.map((v, i) => ({ i, v }));
   return (
     <div className="rounded-xl border border-border bg-background/50 p-3" title={hint}>
       <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className={`mt-0.5 text-[20px] font-black tabular-nums ${cls}`}>{value}</p>
+      <div className="mt-0.5 flex items-baseline gap-2">
+        <span className="text-[20px] font-black tabular-nums text-slate-950 dark:text-white">{value}</span>
+        {deltaPct != null ? (
+          <span className={`text-[11px] font-bold ${deltaCls}`}>{deltaPct > 0 ? '+' : ''}{deltaPct.toFixed(1)}%</span>
+        ) : null}
+      </div>
+      <div className="mt-1.5 h-9">
+        {series.length >= 2 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={series} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+              <Line type="monotone" dataKey="v" stroke={lineColor} strokeWidth={2} dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -240,6 +259,16 @@ function LocalizationPanel({ tenantId }: { tenantId: string }) {
   });
   const d = q.data;
   const top = (d?.articles ?? []).slice(0, 20);
+  const tq = useQuery({
+    queryKey: ['loctrend', tenantId],
+    queryFn: () => loadLocalizationTrendAction(tenantId, 13),
+    enabled: Boolean(tenantId),
+    staleTime: 60_000,
+  });
+  const pts = tq.data?.points ?? [];
+  const last = pts[pts.length - 1];
+  const prev = pts[pts.length - 2];
+  const pct = (a?: number, b?: number) => (a != null && b != null && b !== 0 ? ((a - b) / b) * 100 : null);
   return (
     <div className="dashboard-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -273,19 +302,17 @@ function LocalizationPanel({ tenantId }: { tenantId: string }) {
       ) : (
         <>
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Kpi label="ИЛ (индекс лок.)" value={d.il.toFixed(3)} cls={ilColor(d.il)} hint="Σ(заказы×КТР)/Σ заказов — цель ≤ 1" />
-            <Kpi label="ИРП" value={d.irp.toFixed(3)} cls={irpColor(d.irp)} hint="штраф за нелокальные продажи — цель 0" />
-            <Kpi label="Средняя доля лок." value={`${d.avgShare.toFixed(1)}%`} cls="text-foreground" hint="справочно — на индексы не влияет" />
-            <Kpi
-              label="Ниже 60%"
-              value={`${fmtNum(d.belowThreshold)} арт`}
-              cls={d.belowThreshold > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}
-              hint="артикулы, генерящие ИРП"
-            />
+            <TrendCard label="ИЛ · индекс лок." value={(last?.il ?? d.il).toFixed(3)} deltaPct={pct(last?.il, prev?.il)} goodDir="down" data={pts.map((p) => p.il)} hint="Σ(заказы×КТР)/Σ заказов — ниже = дешевле логистика" />
+            <TrendCard label="ИРП" value={(last?.irp ?? d.irp).toFixed(3)} deltaPct={pct(last?.irp, prev?.irp)} goodDir="down" data={pts.map((p) => p.irp)} hint="штраф за нелокальные продажи — цель 0" />
+            <TrendCard label="Доля локализации" value={`${(last?.share ?? d.avgShare).toFixed(1)}%`} deltaPct={pct(last?.share, prev?.share)} goodDir="up" data={pts.map((p) => p.share)} hint="выше = дешевле логистика" />
+            <TrendCard label="Нелокальные/нед" value={fmtNum(last?.nonLocal ?? 0)} deltaPct={pct(last?.nonLocal, prev?.nonLocal)} goodDir="down" data={pts.map((p) => p.nonLocal)} hint="заказы из чужой зоны за последнюю неделю" />
           </div>
 
           <div className="mt-4 overflow-x-auto">
-            <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Что лечить — топ по влиянию на ИЛ</p>
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              Что лечить — топ по влиянию на ИЛ
+              {d.belowThreshold > 0 ? <span className="text-rose-600 dark:text-rose-400"> · {fmtNum(d.belowThreshold)} арт ниже 60%</span> : null}
+            </p>
             <table className="w-full min-w-[640px] text-[12px]">
               <thead className="text-left text-muted-foreground">
                 <tr>
