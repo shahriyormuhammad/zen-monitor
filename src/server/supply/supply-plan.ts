@@ -40,6 +40,14 @@ export type WarehousePlanRow = {
   stock: number;
 };
 
+export type TopArticle = {
+  nmId: number;
+  vendorCode: string;
+  photoUrl: string | null;
+  ship: number;
+  orders: number;
+};
+
 export type SupplyPlanTotals = {
   /** Всего «Отгрузить», шт (Σ по складам). */
   total: number;
@@ -51,6 +59,8 @@ export type SupplyPlanTotals = {
   byOkrug: Partial<Record<Okrug, SupplyPlanCell>>;
   /** По каждому складу (разнарядка), по убыванию «Отгрузить». */
   byWarehouse: WarehousePlanRow[];
+  /** Топ артикулов к поставке (по убыванию «Отгрузить»). */
+  topArticles: TopArticle[];
 };
 
 export type SupplyPlanInput = {
@@ -155,6 +165,7 @@ export async function computeSupplyPlan(
 
     const byWarehouse = new Map<string, WarehousePlanRow>();
     const byOkrug = new Map<Okrug, SupplyPlanCell>();
+    const perNm = new Map<number, { ship: number; orders: number }>();
     let total = 0;
     let withPlan = 0;
 
@@ -183,14 +194,14 @@ export async function computeSupplyPlan(
         });
         if (ship <= 0 && ord === 0) continue; // склад без спроса и без отгрузки — пропускаем
         nmShip += ship;
-        const okrug = warehouseToOkrug(wh);
-        const wrow = byWarehouse.get(wh) ?? { warehouse: wh, okrug, ship: 0, orders: 0, stock: 0 };
+        const okrugRaw = warehouseToOkrug(wh);
+        const zone = okrugRaw ? zoneOf(okrugRaw) : null;
+        const wrow = byWarehouse.get(wh) ?? { warehouse: wh, okrug: zone, ship: 0, orders: 0, stock: 0 };
         wrow.ship += ship;
         wrow.orders += ord;
         wrow.stock += st.amount;
         byWarehouse.set(wh, wrow);
-        if (okrug) {
-          const zone = zoneOf(okrug);
+        if (zone) {
           const cell = byOkrug.get(zone) ?? { ship: 0, orders: 0, stock: 0 };
           cell.ship += ship;
           cell.orders += ord;
@@ -199,8 +210,32 @@ export async function computeSupplyPlan(
         }
       }
       total += nmShip;
-      if (nmShip > 0) withPlan += 1;
+      if (nmShip > 0) {
+        withPlan += 1;
+        perNm.set(nm, { ship: nmShip, orders: ordersByNm.get(nm) ?? 0 });
+      }
     }
+
+    // Метаданные карточек для топа артикулов.
+    const prodRes = await tx.execute(sql`
+      SELECT nm_id::text AS nm_id, vendor_code, photo_url
+      FROM products
+      WHERE tenant_id = ${tenantId} AND is_hidden = false AND is_archived = false
+    `);
+    const meta = new Map<number, { vendorCode: string; photoUrl: string | null }>();
+    for (const p of prodRes as unknown as Array<{ nm_id: string; vendor_code: string; photo_url: string | null }>) {
+      meta.set(Number(p.nm_id), { vendorCode: p.vendor_code, photoUrl: p.photo_url });
+    }
+    const topArticles: TopArticle[] = Array.from(perNm.entries())
+      .sort((a, b) => b[1].ship - a[1].ship)
+      .slice(0, 15)
+      .map(([nm, v]) => ({
+        nmId: nm,
+        vendorCode: meta.get(nm)?.vendorCode ?? String(nm),
+        photoUrl: meta.get(nm)?.photoUrl ?? null,
+        ship: v.ship,
+        orders: v.orders,
+      }));
 
     return {
       total,
@@ -208,6 +243,7 @@ export async function computeSupplyPlan(
       withPlan,
       byOkrug: Object.fromEntries(byOkrug.entries()) as Partial<Record<Okrug, SupplyPlanCell>>,
       byWarehouse: Array.from(byWarehouse.values()).sort((a, b) => b.ship - a.ship),
+      topArticles,
     };
   });
 }

@@ -70,6 +70,7 @@ const SUMMARY_PERIODS: [string, number][] = [['Месяц', 30], ['2 месяц�
 
 function SupplyHero({ tenantId }: { tenantId: string }) {
   const [days, setDays] = useState(30);
+  const [drill, setDrill] = useState<string | null>(null);
   const q = useQuery({
     queryKey: ['supplyplan', tenantId, days, days],
     queryFn: () => loadSupplyPlanAction(tenantId, days, days),
@@ -81,7 +82,10 @@ function SupplyHero({ tenantId }: { tenantId: string }) {
   const by = (plan?.byOkrug ?? {}) as Record<string, { ship: number; orders: number; stock: number }>;
   const okMax = Math.max(1, ...SUMMARY_OKRUGS.map((o) => by[o.code]?.ship ?? 0));
   const topWh = (plan?.byWarehouse ?? []).filter((w) => w.ship > 0).slice(0, 8);
+  const drillLabel = SUMMARY_OKRUGS.find((o) => o.code === drill)?.label ?? drill;
+  const drillRows = (plan?.byWarehouse ?? []).filter((w) => w.okrug === drill).sort((a, b) => b.ship - a.ship);
   return (
+    <>
     <div className="dashboard-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -112,13 +116,19 @@ function SupplyHero({ tenantId }: { tenantId: string }) {
         {SUMMARY_OKRUGS.map((o) => {
           const n = by[o.code]?.ship ?? 0;
           return (
-            <div key={o.code} className="rounded-xl border border-border bg-background/50 p-3">
-              <p className="text-[11px] text-muted-foreground">{o.label}</p>
+            <button
+              key={o.code}
+              type="button"
+              onClick={() => setDrill(o.code)}
+              className="rounded-xl border border-border bg-background/50 p-3 text-left transition-colors hover:border-rose-300 hover:bg-subtle"
+              title="Провалиться: какие склады и сколько"
+            >
+              <p className="text-[11px] text-muted-foreground">{o.label} <span className="opacity-50">↳</span></p>
               <p className="mt-0.5 text-[16px] font-black tabular-nums text-slate-950 dark:text-white">{fmtNum(n)}</p>
               <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-subtle">
                 <div className={`h-full rounded-full ${n > 0 ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(100, (n / okMax) * 100)}%` }} />
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -136,6 +146,58 @@ function SupplyHero({ tenantId }: { tenantId: string }) {
         </div>
       ) : null}
     </div>
+
+    {drill ? (
+      <div
+        className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm"
+        onClick={() => setDrill(null)}
+      >
+        <div
+          className="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between border-b border-border bg-subtle/30 px-5 py-3">
+            <div>
+              <h3 className="text-[15px] font-extrabold">Отгрузить · {drillLabel}</h3>
+              <p className="text-[11px] text-muted-foreground">{fmtNum(by[drill]?.ship ?? 0)} шт · по каким складам и почему</p>
+            </div>
+            <button type="button" onClick={() => setDrill(null)} className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground" aria-label="Закрыть">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-5">
+            <p className="mb-3 text-[11px] text-muted-foreground">
+              Считаем по факту: заказы, которые склад реально обслужил за период → прогноз по выкупам на горизонт − его остаток. Где остатка не хватает — туда и «Отгрузить».
+            </p>
+            {drillRows.length === 0 ? (
+              <div className="text-[12px] text-muted-foreground">Нет складов с отгрузкой в этом округе.</div>
+            ) : (
+              <table className="w-full text-[12px]">
+                <thead className="text-left text-muted-foreground">
+                  <tr>
+                    <th className="px-2 py-1.5">Склад</th>
+                    <th className="px-2 py-1.5 text-right">Заказов</th>
+                    <th className="px-2 py-1.5 text-right">Остаток</th>
+                    <th className="px-2 py-1.5 text-right">Отгрузить</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {drillRows.map((w) => (
+                    <tr key={w.warehouse} className="border-t border-border/60">
+                      <td className="px-2 py-1.5 font-semibold text-foreground">{w.warehouse}</td>
+                      <td className="px-2 py-1.5 text-right font-mono">{fmtNum(w.orders)}</td>
+                      <td className="px-2 py-1.5 text-right font-mono text-muted-foreground">{fmtNum(w.stock)}</td>
+                      <td className="px-2 py-1.5 text-right font-mono font-bold text-rose-600 dark:text-rose-400">{fmtNum(w.ship)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }
 
